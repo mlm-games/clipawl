@@ -45,13 +45,11 @@ mod platform;
 pub use error::Error;
 
 /// Options for creating a clipboard handle.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ClipboardOptions {
     /// Linux-specific options.
     pub linux: LinuxOptions,
 }
-
 
 /// Linux-specific clipboard options.
 #[derive(Debug, Clone)]

@@ -8,8 +8,7 @@ use std::time::Duration;
 /// - Linux: `wait_for_paste` / `wait_timeout` supported (selection ownership model).
 /// - Linux + Android: `sensitive` is supported.
 /// - Web: options are currently ignored (browser security model dominates).
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SetTextOptions {
     /// On Linux, wait until another app has requested (and thus captured) the clipboard
     /// contents (or until timeout).
@@ -26,4 +25,3 @@ pub struct SetTextOptions {
     /// - Android: marks copied content as sensitive so the system UI avoids previews.
     pub sensitive: bool,
 }
-

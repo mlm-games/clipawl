@@ -1,21 +1,20 @@
-use crate::{Error, Result, SetTextOptions};
+use crate::{ClipboardOptions, Error};
+use std::fmt;
 use wasm_bindgen::JsCast;
 
 pub(crate) struct ClipboardImpl;
 
 impl ClipboardImpl {
-    pub(crate) fn new() -> Result<Self> {
+    pub(crate) fn new(_opts: &ClipboardOptions) -> Result<Self, Error> {
         Ok(Self)
     }
 
-    pub(crate) async fn get_text(&mut self) -> Result<String> {
+    pub(crate) async fn get_text(&mut self) -> Result<String, Error> {
         let window = web_sys::window().ok_or(Error::NotSupported)?;
         let nav = window.navigator();
 
-        // web-sys exposes navigator.clipboard() as a getter returning Clipboard.
-        // In some runtimes it may still be undefined; guard that.
         let clipboard = nav.clipboard();
-        if clipboard.as_ref().is_undefined() {
+        if clipboard.is_undefined() {
             return Err(Error::NotSupported);
         }
 
@@ -27,12 +26,12 @@ impl ClipboardImpl {
         Ok(js.as_string().unwrap_or_default())
     }
 
-    pub(crate) async fn set_text(&mut self, text: &str, _options: SetTextOptions) -> Result<()> {
+    pub(crate) async fn set_text(&mut self, text: &str) -> Result<(), Error> {
         let window = web_sys::window().ok_or(Error::NotSupported)?;
         let nav = window.navigator();
 
         let clipboard = nav.clipboard();
-        if clipboard.as_ref().is_undefined() {
+        if clipboard.is_undefined() {
             return Err(Error::NotSupported);
         }
 
@@ -45,14 +44,31 @@ impl ClipboardImpl {
     }
 }
 
+/// Helper struct to wrap JS error strings into a std::error::Error
+#[derive(Debug)]
+struct JsError(String);
+
+impl fmt::Display for JsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for JsError {}
+
 fn map_js_err(err: wasm_bindgen::JsValue) -> Error {
-    // NotAllowedError is the common failure mode when permissions/user activation fail.
     if let Some(dom) = err.dyn_ref::<web_sys::DomException>() {
         match dom.name().as_str() {
-            "NotAllowedError" => return Error::PermissionDenied,
-            "NotFoundError" => return Error::Unavailable,
-            _ => return Error::Platform(format!("DOMException {}: {}", dom.name(), dom.message())),
+            "NotAllowedError" => return Error::PermissionDenied("User activation required"),
+            "NotFoundError" => return Error::Unavailable("Clipboard API returned NotFound"),
+            _ => {
+                return Error::platform(
+                    "web dom exception",
+                    JsError(format!("{}: {}", dom.name(), dom.message())),
+                );
+            }
         }
     }
-    Error::Platform(format!("{err:?}"))
+
+    Error::platform("web api error", JsError(format!("{:?}", err)))
 }
