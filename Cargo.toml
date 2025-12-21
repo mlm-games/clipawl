@@ -1,9 +1,9 @@
 [package]
 name = "clipawl"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
-rust-version = "1.75"
+rust-version = "1.85"
 description = "Clipboard API for Rust: Web (wasm), Android, and Linux (Wayland + X11) with a portable async API"
 repository = "https://github.com/mlm-games/clipawl"
 readme = "README.md"
