@@ -46,18 +46,12 @@ pub use error::Error;
 
 /// Options for creating a clipboard handle.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ClipboardOptions {
     /// Linux-specific options.
     pub linux: LinuxOptions,
 }
 
-impl Default for ClipboardOptions {
-    fn default() -> Self {
-        Self {
-            linux: LinuxOptions::default(),
-        }
-    }
-}
 
 /// Linux-specific clipboard options.
 #[derive(Debug, Clone)]

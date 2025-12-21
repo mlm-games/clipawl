@@ -9,6 +9,7 @@ use std::time::Duration;
 /// - Linux + Android: `sensitive` is supported.
 /// - Web: options are currently ignored (browser security model dominates).
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct SetTextOptions {
     /// On Linux, wait until another app has requested (and thus captured) the clipboard
     /// contents (or until timeout).
@@ -26,12 +27,3 @@ pub struct SetTextOptions {
     pub sensitive: bool,
 }
 
-impl Default for SetTextOptions {
-    fn default() -> Self {
-        Self {
-            wait_for_paste: false,
-            wait_timeout: None,
-            sensitive: false,
-        }
-    }
-}

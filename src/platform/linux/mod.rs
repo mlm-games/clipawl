@@ -31,7 +31,7 @@ impl ClipboardImpl {
             LinuxBackend::Wayland => {
                 #[cfg(feature = "linux-wayland")]
                 {
-                    return Self::try_wayland();
+                    Self::try_wayland()
                 }
                 #[cfg(not(feature = "linux-wayland"))]
                 {
@@ -41,7 +41,7 @@ impl ClipboardImpl {
             LinuxBackend::X11 => {
                 #[cfg(feature = "linux-x11")]
                 {
-                    return Self::try_x11(opts);
+                    Self::try_x11(opts)
                 }
                 #[cfg(not(feature = "linux-x11"))]
                 {
