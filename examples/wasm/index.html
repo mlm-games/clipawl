@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>clipawl wasm example</title>
+    <style>
+        body { font-family: sans-serif; padding: 2em; max-width: 600px; margin: 0 auto; }
+        button { padding: 0.5em 1em; margin: 0.5em; cursor: pointer; }
+        #output { background: #f0f0f0; padding: 1em; min-height: 100px; white-space: pre-wrap; }
+        .note { color: #666; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>clipawl wasm example</h1>
+
+    <p class="note">
+        <strong>Note:</strong> Clipboard access requires user activation (click/keypress)
+        and a secure context (HTTPS or localhost).
+    </p>
+
+    <div>
+        <input type="text" id="input" value="Hello from clipawl!" style="width: 300px;">
+        <button id="copy">Copy to Clipboard</button>
+        <button id="paste">Paste from Clipboard</button>
+    </div>
+
+    <h3>Output:</h3>
+    <div id="output"></div>
+
+    <script type="module">
+        import init, { copy_text, paste_text } from './pkg/clipawl_wasm_example.js';
+
+        const output = document.getElementById('output');
+        const log = (msg) => { output.textContent += msg + '\n'; };
+
+        await init();
+        log('WASM loaded!');
+
+        document.getElementById('copy').addEventListener('click', async () => {
+            const text = document.getElementById('input').value;
+            try {
+                await copy_text(text);
+                log(`Copied: "${text}"`);
+            } catch (e) {
+                log(`Error copying: ${e}`);
+            }
+        });
+
+        document.getElementById('paste').addEventListener('click', async () => {
+            try {
+                const text = await paste_text();
+                log(`Pasted: "${text}"`);
+            } catch (e) {
+                log(`Error pasting: ${e}`);
+            }
+        });
+    </script>
+</body>
+</html>

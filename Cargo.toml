@@ -1,0 +1,70 @@
+[package]
+name = "clipawl"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.75"
+description = "Clipboard API for Rust: Web (wasm), Android, and Linux (Wayland + X11) with a portable async API"
+repository = "https://github.com/mlm-games/clipawl"
+readme = "README.md"
+keywords = ["clipboard", "wasm", "android", "linux", "cross-platform"]
+categories = ["api-bindings", "wasm", "os"]
+
+[features]
+default = ["linux-wayland", "linux-x11"]
+linux-wayland = []
+linux-x11 = []
+
+[dependencies]
+cfg-if = "1"
+thiserror = "2"
+log = "0.4"
+wl-clipboard-rs = "0.9.2"
+tokio = { version = "1", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "time",
+] }
+clipboard_x11 = "0.4.3"
+
+# Web (wasm32)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.106"
+wasm-bindgen-futures = "0.4.54"
+js-sys = "0.3"
+web-sys = { version = "0.3.83", features = [
+  "Window",
+  "Navigator",
+  "Clipboard",
+  "DomException",
+] }
+
+# Android
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21.1"
+ndk-context = "0.1.1"
+
+# Linux (X11)
+[target.'cfg(all(target_os = "linux", feature = "linux-x11"))'.dependencies]
+clipboard_x11 = "0.4.3"
+
+# Linux (Wayland)
+[target.'cfg(all(target_os = "linux", feature = "linux-wayland"))'.dependencies]
+wl-clipboard-rs = "0.9.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "time",
+] }
+
+[[example]]
+name = "linux"
+path = "examples/linux.rs"
+
+[[example]]
+name = "blocking"
+path = "examples/blocking.rs"
