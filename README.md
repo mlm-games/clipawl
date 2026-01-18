@@ -1,6 +1,6 @@
 # clipawl
 
-A minimal, effective clipboard crate for Rust with a portable async API.
+A clipboard crate for Rust with a portable async API.
 
 **Supported platforms:**
 - **Web** (wasm32) via `navigator.clipboard`
@@ -85,13 +85,6 @@ Disable defaults to reduce dependencies:
 ```toml
 clipawl = { version = "0.1", default-features = false, features = ["linux-x11"] }
 ```
-
-## Roadmap
-
-- [x] v0.1: Text read/write on Web, Android, Linux
-- [ ] v0.2: Linux reliability knobs (wait-for-paste, better error messages)
-- [ ] v0.3: Persistent copy for CLI workflows
-- [ ] v0.4: Additional formats (HTML, image)
 
 ## License
 
