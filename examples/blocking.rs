@@ -6,13 +6,13 @@ fn main() {
         use clipawl::blocking;
 
         // Read
-        match blocking::get_text() {
+        match blocking::read() {
             Ok(text) => println!("Clipboard: {}", text),
             Err(e) => println!("Error: {}", e),
         }
 
         // Write
-        if let Err(e) = blocking::set_text("Hello from blocking API!") {
+        if let Err(e) = blocking::write("Hello from blocking API!") {
             println!("Error: {}", e);
         } else {
             println!("Clipboard set!");

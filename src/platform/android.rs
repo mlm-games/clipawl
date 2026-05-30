@@ -12,14 +12,91 @@ impl ClipboardImpl {
         Ok(Self)
     }
 
-    pub(crate) async fn get_text(&self) -> Result<String, Error> {
-        tokio::task::block_in_place(|| with_jni_env(get_text_jni))
+    pub(crate) async fn mime_types(&self) -> Result<Vec<String>, Error> {
+        tokio::task::block_in_place(|| with_jni_env(get_mime_types_jni))
     }
 
-    pub(crate) async fn set_text(&self, text: &str) -> Result<(), Error> {
-        let text = text.to_owned();
-        tokio::task::block_in_place(move || with_jni_env(|env, ctx| set_text_jni(env, ctx, &text)))
+    pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
+        match mime_type {
+            "text/plain" => {
+                let s = tokio::task::block_in_place(|| with_jni_env(get_text_jni))?;
+                Ok(s.into_bytes())
+            }
+            _ => Err(Error::NotSupported),
+        }
     }
+
+    pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
+        match mime_type {
+            "text/plain" => {
+                let s =
+                    std::str::from_utf8(data).map_err(|e| Error::platform("android: utf-8", e))?;
+                let s = s.to_owned();
+                tokio::task::block_in_place(move || {
+                    with_jni_env(|env, ctx| set_text_jni(env, ctx, &s))
+                })
+            }
+            _ => Err(Error::NotSupported),
+        }
+    }
+}
+
+fn get_mime_types_jni<'local, 'ctx>(
+    env: &mut JNIEnv<'local>,
+    context: &JObject<'ctx>,
+) -> Result<Vec<String>, Error> {
+    let manager = get_clipboard_manager(env, context)?;
+
+    let clip = env
+        .call_method(
+            manager,
+            "getPrimaryClip",
+            "()Landroid/content/ClipData;",
+            &[],
+        )
+        .map_err(|e| Error::platform("android: getPrimaryClip", e))?
+        .l()
+        .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
+
+    if clip.is_null() {
+        return Ok(Vec::new());
+    }
+
+    let description = env
+        .call_method(&clip, "getDescription", "()Landroid/content/ClipDescription;", &[])
+        .map_err(|e| Error::platform("android: getDescription", e))?
+        .l()
+        .map_err(|e| Error::platform("android: getDescription result", e))?;
+
+    if description.is_null() {
+        return Ok(Vec::new());
+    }
+
+    let count = env
+        .call_method(&description, "getMimeTypeCount", "()I", &[])
+        .map_err(|e| Error::platform("android: getMimeTypeCount", e))?
+        .i()
+        .map_err(|e| Error::platform("android: getMimeTypeCount result", e))?;
+
+    let mut mimes = Vec::new();
+    for i in 0..count {
+        let mime = env
+            .call_method(&description, "getMimeType", "(I)Ljava/lang/String;", &[JValue::Int(i)])
+            .map_err(|e| Error::platform("android: getMimeType", e))?
+            .l()
+            .map_err(|e| Error::platform("android: getMimeType result", e))?;
+
+        if mime.is_null() {
+            continue;
+        }
+
+        let jstr = JString::from(mime);
+        if let Ok(s) = env.get_string(&jstr) {
+            mimes.push(s.to_string_lossy().into_owned());
+        }
+    }
+
+    Ok(mimes)
 }
 
 fn with_jni_env<T, F>(f: F) -> Result<T, Error>

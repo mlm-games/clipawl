@@ -87,26 +87,39 @@ impl ClipboardImpl {
         })
     }
 
-    pub(crate) async fn get_text(&self) -> Result<String, Error> {
+    pub(crate) async fn mime_types(&self) -> Result<Vec<String>, Error> {
         match &self.inner {
             #[cfg(feature = "linux-wayland")]
-            Inner::Wayland(w) => w.get_text().await,
+            Inner::Wayland(w) => w.mime_types().await,
 
             #[cfg(feature = "linux-x11")]
-            Inner::X11(x) => x.get_text().await,
+            Inner::X11(x) => x.mime_types().await,
+
+            #[cfg(not(any(feature = "linux-wayland", feature = "linux-x11")))]
+            Inner::None => Ok(Vec::new()),
+        }
+    }
+
+    pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
+        match &self.inner {
+            #[cfg(feature = "linux-wayland")]
+            Inner::Wayland(w) => w.read(mime_type).await,
+
+            #[cfg(feature = "linux-x11")]
+            Inner::X11(x) => x.read(mime_type).await,
 
             #[cfg(not(any(feature = "linux-wayland", feature = "linux-x11")))]
             Inner::None => Err(Error::NotSupported),
         }
     }
 
-    pub(crate) async fn set_text(&self, text: &str) -> Result<(), Error> {
+    pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
         match &self.inner {
             #[cfg(feature = "linux-wayland")]
-            Inner::Wayland(w) => w.set_text(text).await,
+            Inner::Wayland(w) => w.write(mime_type, data).await,
 
             #[cfg(feature = "linux-x11")]
-            Inner::X11(x) => x.set_text(text).await,
+            Inner::X11(x) => x.write(mime_type, data).await,
 
             #[cfg(not(any(feature = "linux-wayland", feature = "linux-x11")))]
             Inner::None => Err(Error::NotSupported),

@@ -11,6 +11,8 @@ A clipboard crate for Rust with a portable async API.
 
 - **Async-first API** — works naturally with web's Promise-based clipboard
 - **Platform detection** — automatically picks Wayland or X11 on Linux
+- **Arbitrary MIME types** — read/write any format via `read_as("image/png")` etc.
+- **Bare `read()`/`write()` defaults to text** — no MIME type needed for plain text
 - **Documented pitfalls** — explicit about Linux selection ownership, web permissions, etc.
 
 ## Quick Start
@@ -20,13 +22,10 @@ use clipawl::{Clipboard, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let mut clipboard = Clipboard::new()?;
+    let clipboard = Clipboard::new()?;
 
-    // Write
-    clipboard.set_text("Hello from clipawl!").await?;
-
-    // Read
-    let text = clipboard.get_text().await?;
+    clipboard.write("Hello from clipawl!").await?;
+    let text = clipboard.read().await?;
     println!("Clipboard: {}", text);
 
     Ok(())
@@ -50,13 +49,12 @@ async fn main() -> Result<(), Error> {
 ### Linux
 
 **Selection ownership model:** On X11 and Wayland, the app that sets the clipboard
-often must continue serving the data. If your app exits immediately after `set_text()`,
+often must continue serving the data. If your app exits immediately after `write()`,
 the clipboard may appear empty to other apps.
 
 **Workarounds:**
 - Keep the `Clipboard` instance alive longer
 - Use a clipboard manager (e.g., `clipman`, `wl-clipboard`)
-- Future: `set_text_persistent()` (planned)
 
 **Wayland:** Requires compositor support for `wlr-data-control` or `ext-data-control`
 protocols. If unavailable, clipawl falls back to X11 (XWayland).
@@ -76,6 +74,30 @@ let opts = ClipboardOptions {
 let clipboard = Clipboard::new_with_options(opts)?;
 ```
 
+## Arbitrary Formats
+
+Read and write any MIME type via `read_as()` / `write_as()`:
+
+```rust
+use clipawl::{Clipboard, Error};
+
+async fn example(clipboard: &Clipboard) -> Result<(), Error> {
+    // PNG images
+    clipboard.write_as("image/png", &png_bytes).await?;
+    let png = clipboard.read_as("image/png").await?;
+
+    // Any custom MIME type
+    clipboard.write_as("text/uri-list", b"https://example.com").await?;
+    Ok(())
+}
+```
+
+**Platform support:**
+| MIME type        | Wayland | Web | Android | X11 |
+|------------------|---------|-----|---------|-----|
+| `text/plain`     | ✅      | ✅  | ✅      | ✅  |
+| `*/*` (any)      | ✅      | ✅  | ❌       | ❌   |
+
 ## Cargo Features
 
 - `linux-wayland` (default) — Enable Wayland backend
@@ -83,7 +105,7 @@ let clipboard = Clipboard::new_with_options(opts)?;
 
 Disable defaults to reduce dependencies:
 ```toml
-clipawl = { version = "0.2", default-features = false, features = ["linux-x11"] }
+clipawl = { version = "0.3", default-features = false, features = ["linux-x11"] }
 ```
 
 ## License

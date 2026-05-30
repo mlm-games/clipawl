@@ -31,15 +31,14 @@
 //!
 //! async fn example() -> Result<(), Error> {
 //!     let clipboard = Clipboard::new()?;
-//!     clipboard.set_text("Hello!").await?;
-//!     let text = clipboard.get_text().await?;
+//!     clipboard.write("Hello!").await?;
+//!     let text = clipboard.read().await?;
 //!     println!("{}", text);
 //!     Ok(())
 //! }
 //! ```
 
 mod error;
-mod options;
 mod platform;
 
 pub use error::Error;
@@ -95,7 +94,7 @@ pub enum LinuxBackend {
 ///
 /// **Important (Linux):** Keep this alive while you expect clipboard data to be
 /// available. Due to selection ownership semantics, dropping this too soon after
-/// `set_text()` may cause the clipboard to appear empty.
+/// `write()` may cause the clipboard to appear empty.
 pub struct Clipboard {
     inner: platform::ClipboardImpl,
 }
@@ -115,15 +114,44 @@ impl Clipboard {
 
     /// Read text from the clipboard.
     ///
-    /// Returns an empty string if the clipboard is empty or has no text
-    /// representation (browser behavior varies).
-    pub async fn get_text(&self) -> Result<String, Error> {
-        self.inner.get_text().await
+    /// Shortcut for `read_as("text/plain")`. Returns an empty string if no
+    /// text content is available.
+    pub async fn read(&self) -> Result<String, Error> {
+        let buf = self.inner.read("text/plain").await?;
+        Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
     /// Write text to the clipboard.
-    pub async fn set_text(&self, text: &str) -> Result<(), Error> {
-        self.inner.set_text(text).await
+    ///
+    /// Shortcut for `write_as("text/plain", text.as_bytes())`.
+    pub async fn write(&self, text: &str) -> Result<(), Error> {
+        self.inner.write("text/plain", text.as_bytes()).await
+    }
+
+    /// Read clipboard content in the given MIME type.
+    ///
+    /// Returns an empty `Vec` if no content is available in that type.
+    ///
+    /// ## Supported MIME types per platform:
+    /// - **Wayland**: any MIME type is accepted
+    /// - **Web**: any MIME type the browser supports
+    /// - **Android**: `text/plain`
+    /// - **X11**: `text/plain` only
+    pub async fn read_as(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
+        self.inner.read(mime_type).await
+    }
+
+    /// Write clipboard content in the given MIME type.
+    pub async fn write_as(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
+        self.inner.write(mime_type, data).await
+    }
+
+    /// List available MIME types currently on the clipboard.
+    ///
+    /// Returns an empty `Vec` if the clipboard is empty or if the platform
+    /// does not support format enumeration.
+    pub async fn mime_types(&self) -> Result<Vec<String>, Error> {
+        self.inner.mime_types().await
     }
 }
 
@@ -132,29 +160,123 @@ impl Clipboard {
 pub mod blocking {
     use super::*;
 
-    /// Read text from the clipboard (blocking).
-    pub fn get_text() -> Result<String, Error> {
-        let rt = tokio::runtime::Builder::new_current_thread()
+    fn new_runtime() -> Result<tokio::runtime::Runtime, Error> {
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| Error::Platform {
                 context: "blocking: failed to create runtime",
                 source: Box::new(e),
-            })?;
+            })
+    }
+
+    /// Read text from the clipboard (blocking).
+    pub fn read() -> Result<String, Error> {
+        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
-        rt.block_on(clipboard.get_text())
+        rt.block_on(clipboard.read())
     }
 
     /// Write text to the clipboard (blocking).
-    pub fn set_text(text: &str) -> Result<(), Error> {
+    pub fn write(text: &str) -> Result<(), Error> {
+        let rt = new_runtime()?;
+        let clipboard = Clipboard::new()?;
+        let text = text.to_owned();
+        rt.block_on(clipboard.write(&text))
+    }
+
+    /// Read clipboard content in the given MIME type (blocking).
+    pub fn read_as(mime_type: &str) -> Result<Vec<u8>, Error> {
+        let rt = new_runtime()?;
+        let clipboard = Clipboard::new()?;
+        let mime_type = mime_type.to_owned();
+        rt.block_on(clipboard.read_as(&mime_type))
+    }
+
+    /// Write clipboard content in the given MIME type (blocking).
+    pub fn write_as(mime_type: &str, data: &[u8]) -> Result<(), Error> {
+        let rt = new_runtime()?;
+        let clipboard = Clipboard::new()?;
+        let mime_type = mime_type.to_owned();
+        let data = data.to_vec();
+        rt.block_on(clipboard.write_as(&mime_type, &data))
+    }
+
+    /// List available MIME types on the clipboard (blocking).
+    pub fn mime_types() -> Result<Vec<String>, Error> {
+        let rt = new_runtime()?;
+        let clipboard = Clipboard::new()?;
+        rt.block_on(clipboard.mime_types())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_options_default() {
+        let opts = ClipboardOptions::default();
+        assert_eq!(opts.linux.selection, LinuxSelection::Clipboard);
+        assert_eq!(opts.linux.backend, LinuxBackend::Auto);
+    }
+
+    #[test]
+    fn linux_selection_default() {
+        assert_eq!(LinuxSelection::default(), LinuxSelection::Clipboard);
+    }
+
+    #[test]
+    fn linux_backend_default() {
+        assert_eq!(LinuxBackend::default(), LinuxBackend::Auto);
+    }
+
+    #[test]
+    fn error_display_not_supported() {
+        assert_eq!(
+            Error::NotSupported.to_string(),
+            "clipboard not supported on this platform"
+        );
+    }
+
+    #[test]
+    fn error_display_permission_denied() {
+        assert_eq!(
+            Error::PermissionDenied("test reason").to_string(),
+            "clipboard permission denied: test reason"
+        );
+    }
+
+    #[test]
+    fn error_display_unavailable() {
+        assert_eq!(
+            Error::Unavailable("empty").to_string(),
+            "clipboard unavailable: empty"
+        );
+    }
+
+    #[test]
+    fn error_display_platform() {
+        let inner = Error::platform("test ctx", std::io::Error::other("boom"));
+        assert_eq!(inner.to_string(), "test ctx: boom");
+    }
+
+    #[test]
+    fn error_is_std_error() {
+        use std::error::Error as _;
+        let e = Error::NotSupported;
+        assert!(e.source().is_none());
+
+        let e = Error::platform("ctx", std::io::Error::other("x"));
+        assert!(e.source().is_some());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn blocking_runtime_construction() {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .build()
-            .map_err(|e| Error::Platform {
-                context: "blocking: failed to create runtime",
-                source: Box::new(e),
-            })?;
-        let clipboard = Clipboard::new()?;
-        rt.block_on(clipboard.set_text(text))
+            .build();
+        assert!(rt.is_ok());
     }
 }

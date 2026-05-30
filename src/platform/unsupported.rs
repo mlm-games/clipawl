@@ -9,11 +9,15 @@ impl ClipboardImpl {
         Err(Error::NotSupported)
     }
 
-    pub(crate) async fn get_text(&self) -> Result<String, Error> {
+    pub(crate) async fn mime_types(&self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
+    pub(crate) async fn read(&self, _mime_type: &str) -> Result<Vec<u8>, Error> {
         Err(Error::NotSupported)
     }
 
-    pub(crate) async fn set_text(&self, _text: &str) -> Result<(), Error> {
+    pub(crate) async fn write(&self, _mime_type: &str, _data: &[u8]) -> Result<(), Error> {
         Err(Error::NotSupported)
     }
 }
