@@ -9,11 +9,11 @@ impl ClipboardImpl {
         Err(Error::NotSupported)
     }
 
-    pub(crate) async fn get_text(&mut self) -> Result<String, Error> {
+    pub(crate) async fn get_text(&self) -> Result<String, Error> {
         Err(Error::NotSupported)
     }
 
-    pub(crate) async fn set_text(&mut self, _text: &str) -> Result<(), Error> {
+    pub(crate) async fn set_text(&self, _text: &str) -> Result<(), Error> {
         Err(Error::NotSupported)
     }
 }

@@ -1,9 +1,9 @@
 //! Android clipboard implementation via JNI + ClipboardManager.
 
 use crate::{ClipboardOptions, Error};
+use jni::JNIEnv;
 use jni::objects::{JObject, JString, JValue};
 use jni::sys::jobject;
-use jni::JNIEnv;
 
 pub(crate) struct ClipboardImpl;
 
@@ -12,13 +12,13 @@ impl ClipboardImpl {
         Ok(Self)
     }
 
-    pub(crate) async fn get_text(&mut self) -> Result<String, Error> {
-        with_jni_env(get_text_jni)
+    pub(crate) async fn get_text(&self) -> Result<String, Error> {
+        tokio::task::block_in_place(|| with_jni_env(get_text_jni))
     }
 
-    pub(crate) async fn set_text(&mut self, text: &str) -> Result<(), Error> {
+    pub(crate) async fn set_text(&self, text: &str) -> Result<(), Error> {
         let text = text.to_owned();
-        with_jni_env(move |env, ctx| set_text_jni(env, ctx, &text))
+        tokio::task::block_in_place(move || with_jni_env(|env, ctx| set_text_jni(env, ctx, &text)))
     }
 }
 

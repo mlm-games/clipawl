@@ -5,7 +5,7 @@ use clipawl::{Clipboard, Error};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Read current clipboard
-    let mut clipboard = Clipboard::new()?;
+    let clipboard = Clipboard::new()?;
 
     match clipboard.get_text().await {
         Ok(text) if text.is_empty() => println!("Clipboard is empty"),

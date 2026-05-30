@@ -30,7 +30,7 @@
 //! use clipawl::{Clipboard, Error};
 //!
 //! async fn example() -> Result<(), Error> {
-//!     let mut clipboard = Clipboard::new()?;
+//!     let clipboard = Clipboard::new()?;
 //!     clipboard.set_text("Hello!").await?;
 //!     let text = clipboard.get_text().await?;
 //!     println!("{}", text);
@@ -117,12 +117,12 @@ impl Clipboard {
     ///
     /// Returns an empty string if the clipboard is empty or has no text
     /// representation (browser behavior varies).
-    pub async fn get_text(&mut self) -> Result<String, Error> {
+    pub async fn get_text(&self) -> Result<String, Error> {
         self.inner.get_text().await
     }
 
     /// Write text to the clipboard.
-    pub async fn set_text(&mut self, text: &str) -> Result<(), Error> {
+    pub async fn set_text(&self, text: &str) -> Result<(), Error> {
         self.inner.set_text(text).await
     }
 }
@@ -141,7 +141,7 @@ pub mod blocking {
                 context: "blocking: failed to create runtime",
                 source: Box::new(e),
             })?;
-        let mut clipboard = Clipboard::new()?;
+        let clipboard = Clipboard::new()?;
         rt.block_on(clipboard.get_text())
     }
 
@@ -154,7 +154,7 @@ pub mod blocking {
                 context: "blocking: failed to create runtime",
                 source: Box::new(e),
             })?;
-        let mut clipboard = Clipboard::new()?;
+        let clipboard = Clipboard::new()?;
         rt.block_on(clipboard.set_text(text))
     }
 }

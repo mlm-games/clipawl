@@ -83,7 +83,7 @@ let clipboard = Clipboard::new_with_options(opts)?;
 
 Disable defaults to reduce dependencies:
 ```toml
-clipawl = { version = "0.1", default-features = false, features = ["linux-x11"] }
+clipawl = { version = "0.2", default-features = false, features = ["linux-x11"] }
 ```
 
 ## License

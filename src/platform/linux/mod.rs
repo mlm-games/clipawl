@@ -17,7 +17,7 @@ enum Inner {
     Wayland(wayland::WaylandClipboard),
 
     #[cfg(feature = "linux-x11")]
-    X11(x11::X11Clipboard),
+    X11(Box<x11::X11Clipboard>),
 
     #[cfg(not(any(feature = "linux-wayland", feature = "linux-x11")))]
     None,
@@ -83,12 +83,12 @@ impl ClipboardImpl {
     fn try_x11(opts: &ClipboardOptions) -> Result<Self, Error> {
         let x11 = x11::X11Clipboard::new(opts)?;
         Ok(Self {
-            inner: Inner::X11(x11),
+            inner: Inner::X11(Box::new(x11)),
         })
     }
 
-    pub(crate) async fn get_text(&mut self) -> Result<String, Error> {
-        match &mut self.inner {
+    pub(crate) async fn get_text(&self) -> Result<String, Error> {
+        match &self.inner {
             #[cfg(feature = "linux-wayland")]
             Inner::Wayland(w) => w.get_text().await,
 
@@ -100,8 +100,8 @@ impl ClipboardImpl {
         }
     }
 
-    pub(crate) async fn set_text(&mut self, text: &str) -> Result<(), Error> {
-        match &mut self.inner {
+    pub(crate) async fn set_text(&self, text: &str) -> Result<(), Error> {
+        match &self.inner {
             #[cfg(feature = "linux-wayland")]
             Inner::Wayland(w) => w.set_text(text).await,
 

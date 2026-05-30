@@ -9,7 +9,7 @@ impl ClipboardImpl {
         Ok(Self)
     }
 
-    pub(crate) async fn get_text(&mut self) -> Result<String, Error> {
+    pub(crate) async fn get_text(&self) -> Result<String, Error> {
         let window = web_sys::window().ok_or(Error::NotSupported)?;
         let nav = window.navigator();
 
@@ -26,7 +26,7 @@ impl ClipboardImpl {
         Ok(js.as_string().unwrap_or_default())
     }
 
-    pub(crate) async fn set_text(&mut self, text: &str) -> Result<(), Error> {
+    pub(crate) async fn set_text(&self, text: &str) -> Result<(), Error> {
         let window = web_sys::window().ok_or(Error::NotSupported)?;
         let nav = window.navigator();
 

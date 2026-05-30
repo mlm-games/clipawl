@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-/// Options for `set_text_with`.
+/// Options for `set_text_with` (planned for future).
 ///
 /// Cross-platform rule: unsupported fields are ignored on platforms where they
 /// can’t apply.
@@ -9,7 +9,8 @@ use std::time::Duration;
 /// - Linux + Android: `sensitive` is supported.
 /// - Web: options are currently ignored (browser security model dominates).
 #[derive(Clone, Debug, Default)]
-pub struct SetTextOptions {
+#[allow(dead_code)]
+pub(crate) struct SetTextOptions {
     /// On Linux, wait until another app has requested (and thus captured) the clipboard
     /// contents (or until timeout).
     ///
