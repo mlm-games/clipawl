@@ -63,7 +63,12 @@ fn get_mime_types_jni<'local, 'ctx>(
     }
 
     let description = env
-        .call_method(&clip, "getDescription", "()Landroid/content/ClipDescription;", &[])
+        .call_method(
+            &clip,
+            "getDescription",
+            "()Landroid/content/ClipDescription;",
+            &[],
+        )
         .map_err(|e| Error::platform("android: getDescription", e))?
         .l()
         .map_err(|e| Error::platform("android: getDescription result", e))?;
@@ -81,7 +86,12 @@ fn get_mime_types_jni<'local, 'ctx>(
     let mut mimes = Vec::new();
     for i in 0..count {
         let mime = env
-            .call_method(&description, "getMimeType", "(I)Ljava/lang/String;", &[JValue::Int(i)])
+            .call_method(
+                &description,
+                "getMimeType",
+                "(I)Ljava/lang/String;",
+                &[JValue::Int(i)],
+            )
             .map_err(|e| Error::platform("android: getMimeType", e))?
             .l()
             .map_err(|e| Error::platform("android: getMimeType result", e))?;

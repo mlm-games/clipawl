@@ -86,8 +86,7 @@ impl ClipboardImpl {
 
     pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
         if mime_type == "text/plain" {
-            let text =
-                std::str::from_utf8(data).map_err(|e| Error::platform("web: utf-8", e))?;
+            let text = std::str::from_utf8(data).map_err(|e| Error::platform("web: utf-8", e))?;
             let clipboard = get_clipboard()?;
             let promise = clipboard.write_text(text);
             wasm_bindgen_futures::JsFuture::from(promise)
