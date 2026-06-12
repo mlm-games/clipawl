@@ -4,6 +4,14 @@ use std::sync::Mutex;
 
 use crate::{ClipboardOptions, Error, LinuxSelection};
 
+// Static assertion: clipboard_x11::Clipboard must be Send to be wrapped in Mutex.
+#[allow(dead_code)]
+fn _assert_send()
+where
+    clipboard_x11::Clipboard: Send,
+{
+}
+
 pub(crate) struct X11Clipboard {
     selection: LinuxSelection,
     inner: Mutex<clipboard_x11::Clipboard>,

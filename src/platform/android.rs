@@ -123,12 +123,10 @@ where
         .map_err(|e| Error::platform("android: attach_current_thread", e))?;
 
     // SAFETY: ndk_context provides a live Context pointer; we must not delete it.
-    let context = unsafe { JObject::from_raw(android_ctx.context() as jobject) };
+    let context =
+        std::mem::ManuallyDrop::new(unsafe { JObject::from_raw(android_ctx.context() as jobject) });
 
     let result = f(&mut env, &context);
-
-    // Don't call DeleteLocalRef on the context — it's owned by the app.
-    std::mem::forget(context);
 
     result
 }

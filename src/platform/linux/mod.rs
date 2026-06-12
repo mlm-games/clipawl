@@ -31,7 +31,7 @@ impl ClipboardImpl {
             LinuxBackend::Wayland => {
                 #[cfg(feature = "linux-wayland")]
                 {
-                    Self::try_wayland()
+                    Self::try_wayland(opts)
                 }
                 #[cfg(not(feature = "linux-wayland"))]
                 {
@@ -52,7 +52,7 @@ impl ClipboardImpl {
                 // Try Wayland first (if WAYLAND_DISPLAY is set), then X11
                 #[cfg(feature = "linux-wayland")]
                 if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-                    if let Ok(cb) = Self::try_wayland() {
+                    if let Ok(cb) = Self::try_wayland(opts) {
                         log::debug!("clipawl: using Wayland backend");
                         return Ok(cb);
                     }
@@ -72,8 +72,8 @@ impl ClipboardImpl {
     }
 
     #[cfg(feature = "linux-wayland")]
-    fn try_wayland() -> Result<Self, Error> {
-        let wl = wayland::WaylandClipboard::new()?;
+    fn try_wayland(opts: &ClipboardOptions) -> Result<Self, Error> {
+        let wl = wayland::WaylandClipboard::new(opts)?;
         Ok(Self {
             inner: Inner::Wayland(wl),
         })

@@ -8,6 +8,11 @@
 //! - **Android** — via JNI + ClipboardManager
 //! - **Linux** — via Wayland (wl-clipboard-rs) + X11 (clipboard_x11)
 //!
+//! ## Unsupported Platforms
+//!
+//! - **macOS** and **Windows** are not currently supported. On these platforms,
+//!   `Clipboard::new()` returns `Err(Error::NotSupported)`. Contributions are welcome.
+//!
 //! ## Platform Caveats
 //!
 //! ### Web
@@ -95,6 +100,10 @@ pub enum LinuxBackend {
 /// **Important (Linux):** Keep this alive while you expect clipboard data to be
 /// available. Due to selection ownership semantics, dropping this too soon after
 /// `write()` may cause the clipboard to appear empty.
+///
+/// **Thread safety:** `Clipboard` is `Send` and `Sync` on all supported
+/// platforms (non-WASM targets use `Mutex` internally for shared state).
+/// On WASM, `Clipboard` contains no JS handles and is trivially `Send + Sync`.
 pub struct Clipboard {
     inner: platform::ClipboardImpl,
 }
@@ -156,12 +165,17 @@ impl Clipboard {
 }
 
 /// Blocking API for non-wasm targets.
+///
+/// **Note:** Each call creates a new tokio runtime and clipboard handle,
+/// which is wasteful (especially on Linux where connecting to Wayland/X11
+/// has overhead). Consider keeping a `Clipboard` instance alive with your
+/// own runtime if you make repeated calls.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod blocking {
     use super::*;
 
     fn new_runtime() -> Result<tokio::runtime::Runtime, Error> {
-        tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|e| Error::Platform {

@@ -27,12 +27,7 @@ impl ClipboardImpl {
                 Ok(item) => item,
                 Err(_) => continue,
             };
-            let types_val =
-                js_sys::Reflect::get(&item, &JsValue::from("types")).unwrap_or(JsValue::UNDEFINED);
-            let types_arr = match types_val.dyn_into::<Array>() {
-                Ok(arr) => arr,
-                Err(_) => continue,
-            };
+            let types_arr = item.types();
             for j in 0..types_arr.length() {
                 if let Some(s) = types_arr.get(j).as_string() {
                     if !mimes.contains(&s) {
@@ -137,11 +132,7 @@ impl ClipboardImpl {
 fn get_clipboard() -> Result<web_sys::Clipboard, Error> {
     let window = web_sys::window().ok_or(Error::NotSupported)?;
     let nav = window.navigator();
-    let clipboard = nav.clipboard();
-    if clipboard.is_undefined() {
-        return Err(Error::NotSupported);
-    }
-    Ok(clipboard)
+    Ok(nav.clipboard())
 }
 
 /// Helper struct to wrap JS error strings into a std::error::Error

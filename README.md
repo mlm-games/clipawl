@@ -62,7 +62,7 @@ protocols. If unavailable, clipawl falls back to X11 (XWayland).
 ## Options
 
 ```rust
-use clipawl::{Clipboard, ClipboardOptions, LinuxBackend, LinuxSelection};
+use clipawl::{Clipboard, ClipboardOptions, LinuxBackend, LinuxOptions, LinuxSelection};
 
 let opts = ClipboardOptions {
     linux: LinuxOptions {
