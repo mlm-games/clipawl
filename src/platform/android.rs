@@ -1,9 +1,10 @@
 //! Android clipboard implementation via JNI + ClipboardManager.
 
 use crate::{ClipboardOptions, Error};
-use jni::JNIEnv;
+use jni::errors::Result as JniResult;
 use jni::objects::{JObject, JString, JValue};
-use jni::sys::jobject;
+use jni::sys::{jint, jobject};
+use jni::{Env, jni_sig, jni_str};
 
 pub(crate) struct ClipboardImpl;
 
@@ -32,115 +33,127 @@ impl ClipboardImpl {
                 let s =
                     std::str::from_utf8(data).map_err(|e| Error::platform("android: utf-8", e))?;
                 let s = s.to_owned();
-                tokio::task::block_in_place(move || {
-                    with_jni_env(|env, ctx| set_text_jni(env, ctx, &s))
-                })
+                tokio::task::block_in_place(move || with_jni_env(|env| set_text_jni(env, &s)))
             }
             _ => Err(Error::NotSupported),
         }
     }
 }
 
-fn get_mime_types_jni<'local, 'ctx>(
-    env: &mut JNIEnv<'local>,
-    context: &JObject<'ctx>,
-) -> Result<Vec<String>, Error> {
-    let manager = get_clipboard_manager(env, context)?;
+fn with_context<'local, T>(
+    env: &mut Env<'local>,
+    f: impl FnOnce(&mut Env<'local>, &JObject<'local>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let android_ctx = ndk_context::android_context();
+    let context = unsafe { JObject::from_raw(env, android_ctx.context() as jobject) };
+    let context = std::mem::ManuallyDrop::new(context);
+    f(env, &context)
+}
 
-    let clip = env
-        .call_method(
-            manager,
-            "getPrimaryClip",
-            "()Landroid/content/ClipData;",
-            &[],
-        )
-        .map_err(|e| Error::platform("android: getPrimaryClip", e))?
-        .l()
-        .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
+fn with_jni_env<T>(f: impl FnOnce(&mut Env<'_>) -> Result<T, Error>) -> Result<T, Error> {
+    let android_ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(android_ctx.vm().cast()) };
 
-    if clip.is_null() {
-        return Ok(Vec::new());
-    }
+    let mut result: Option<Result<T, Error>> = None;
 
-    let description = env
-        .call_method(
-            &clip,
-            "getDescription",
-            "()Landroid/content/ClipDescription;",
-            &[],
-        )
-        .map_err(|e| Error::platform("android: getDescription", e))?
-        .l()
-        .map_err(|e| Error::platform("android: getDescription result", e))?;
+    vm.attach_current_thread(|env| {
+        result = Some(f(env));
+        JniResult::Ok(())
+    })
+    .map_err(|e| Error::platform("android: attach_current_thread", e))?;
 
-    if description.is_null() {
-        return Ok(Vec::new());
-    }
+    result.unwrap_or_else(|| Err(Error::Unavailable("android: jni env unavailable")))
+}
 
-    let count = env
-        .call_method(&description, "getMimeTypeCount", "()I", &[])
-        .map_err(|e| Error::platform("android: getMimeTypeCount", e))?
-        .i()
-        .map_err(|e| Error::platform("android: getMimeTypeCount result", e))?;
+fn get_mime_types_jni(env: &mut Env<'_>) -> Result<Vec<String>, Error> {
+    with_context(env, |env, context| {
+        let manager = get_clipboard_manager(env, context)?;
 
-    let mut mimes = Vec::new();
-    for i in 0..count {
-        let mime = env
+        let clip = env
+            .call_method(
+                manager,
+                jni_str!("getPrimaryClip"),
+                jni_sig!("()Landroid/content/ClipData;"),
+                &[],
+            )
+            .map_err(|e| Error::platform("android: getPrimaryClip", e))?
+            .l()
+            .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
+
+        if clip.is_null() {
+            return Ok(Vec::new());
+        }
+
+        let description = env
+            .call_method(
+                &clip,
+                jni_str!("getDescription"),
+                jni_sig!("()Landroid/content/ClipDescription;"),
+                &[],
+            )
+            .map_err(|e| Error::platform("android: getDescription", e))?
+            .l()
+            .map_err(|e| Error::platform("android: getDescription result", e))?;
+
+        if description.is_null() {
+            return Ok(Vec::new());
+        }
+
+        let count: jint = env
             .call_method(
                 &description,
-                "getMimeType",
-                "(I)Ljava/lang/String;",
-                &[JValue::Int(i)],
+                jni_str!("getMimeTypeCount"),
+                jni_sig!("()I"),
+                &[],
             )
-            .map_err(|e| Error::platform("android: getMimeType", e))?
-            .l()
-            .map_err(|e| Error::platform("android: getMimeType result", e))?;
+            .map_err(|e| Error::platform("android: getMimeTypeCount", e))?
+            .i()
+            .map_err(|e| Error::platform("android: getMimeTypeCount result", e))?;
 
-        if mime.is_null() {
-            continue;
+        let mut mimes = Vec::new();
+        for i in 0..count {
+            let mime = env
+                .call_method(
+                    &description,
+                    jni_str!("getMimeType"),
+                    jni_sig!("(I)Ljava/lang/String;"),
+                    &[JValue::Int(i)],
+                )
+                .map_err(|e| Error::platform("android: getMimeType", e))?
+                .l()
+                .map_err(|e| Error::platform("android: getMimeType result", e))?;
+
+            if mime.is_null() {
+                continue;
+            }
+
+            if let Ok(jstr) = JString::cast_local(env, mime) {
+                if let Ok(s) = jstr.try_to_string(env) {
+                    if !mimes.contains(&s) {
+                        mimes.push(s);
+                    }
+                }
+            }
         }
 
-        let jstr = JString::from(mime);
-        if let Ok(s) = env.get_string(&jstr) {
-            mimes.push(s.to_string_lossy().into_owned());
-        }
-    }
-
-    Ok(mimes)
+        Ok(mimes)
+    })
 }
 
-fn with_jni_env<T, F>(f: F) -> Result<T, Error>
-where
-    F: FnOnce(&mut JNIEnv<'_>, &JObject<'_>) -> Result<T, Error>,
-{
-    let android_ctx = ndk_context::android_context();
-
-    let vm = unsafe { jni::JavaVM::from_raw(android_ctx.vm().cast()) }
-        .map_err(|e| Error::platform("android: JavaVM::from_raw", e))?;
-
-    let mut env = vm
-        .attach_current_thread()
-        .map_err(|e| Error::platform("android: attach_current_thread", e))?;
-
-    // SAFETY: ndk_context provides a live Context pointer; we must not delete it.
-    let context =
-        std::mem::ManuallyDrop::new(unsafe { JObject::from_raw(android_ctx.context() as jobject) });
-
-    let result = f(&mut env, &context);
-
-    result
-}
-
-fn get_clipboard_manager<'local, 'ctx>(
-    env: &mut JNIEnv<'local>,
-    context: &JObject<'ctx>,
+fn get_clipboard_manager<'local>(
+    env: &mut Env<'local>,
+    context: &JObject<'local>,
 ) -> Result<JObject<'local>, Error> {
     let context_class = env
-        .find_class("android/content/Context")
+        .find_class(jni_str!("android/content/Context"))
         .map_err(|e| Error::platform("android: find_class(Context)", e))?;
 
     let service_field = env
-        .get_static_field(context_class, "CLIPBOARD_SERVICE", "Ljava/lang/String;")
+        .get_static_field(
+            context_class,
+            jni_str!("CLIPBOARD_SERVICE"),
+            jni_sig!("Ljava/lang/String;"),
+        )
         .map_err(|e| Error::platform("android: get CLIPBOARD_SERVICE", e))?;
 
     let service_name = service_field
@@ -150,8 +163,8 @@ fn get_clipboard_manager<'local, 'ctx>(
     let manager = env
         .call_method(
             context,
-            "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;",
+            jni_str!("getSystemService"),
+            jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
             &[JValue::Object(&service_name)],
         )
         .map_err(|e| Error::platform("android: getSystemService", e))?
@@ -165,128 +178,119 @@ fn get_clipboard_manager<'local, 'ctx>(
     Ok(manager)
 }
 
-fn get_text_jni<'local, 'ctx>(
-    env: &mut JNIEnv<'local>,
-    context: &JObject<'ctx>,
-) -> Result<String, Error> {
-    let manager = get_clipboard_manager(env, context)?;
+fn get_text_jni(env: &mut Env<'_>) -> Result<String, Error> {
+    with_context(env, |env, context| {
+        let manager = get_clipboard_manager(env, context)?;
 
-    // ClipboardManager.getPrimaryClip()
-    let clip = env
-        .call_method(
-            manager,
-            "getPrimaryClip",
-            "()Landroid/content/ClipData;",
-            &[],
-        )
-        .map_err(|e| Error::platform("android: getPrimaryClip", e))?
-        .l()
-        .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
+        let clip = env
+            .call_method(
+                manager,
+                jni_str!("getPrimaryClip"),
+                jni_sig!("()Landroid/content/ClipData;"),
+                &[],
+            )
+            .map_err(|e| Error::platform("android: getPrimaryClip", e))?
+            .l()
+            .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
 
-    if clip.is_null() {
-        return Err(Error::PermissionDenied(
-            "getPrimaryClip returned null (app may lack focus)",
-        ));
-    }
+        if clip.is_null() {
+            return Err(Error::PermissionDenied(
+                "getPrimaryClip returned null (app may lack focus)",
+            ));
+        }
 
-    // Check item count
-    let count = env
-        .call_method(&clip, "getItemCount", "()I", &[])
-        .map_err(|e| Error::platform("android: getItemCount", e))?
-        .i()
-        .map_err(|e| Error::platform("android: getItemCount result", e))?;
+        let count: jint = env
+            .call_method(&clip, jni_str!("getItemCount"), jni_sig!("()I"), &[])
+            .map_err(|e| Error::platform("android: getItemCount", e))?
+            .i()
+            .map_err(|e| Error::platform("android: getItemCount result", e))?;
 
-    if count <= 0 {
-        return Err(Error::Unavailable("clipboard is empty"));
-    }
+        if count <= 0 {
+            return Err(Error::Unavailable("clipboard is empty"));
+        }
 
-    // Get first item
-    let item = env
-        .call_method(
-            clip,
-            "getItemAt",
-            "(I)Landroid/content/ClipData$Item;",
-            &[JValue::Int(0)],
-        )
-        .map_err(|e| Error::platform("android: getItemAt(0)", e))?
-        .l()
-        .map_err(|e| Error::platform("android: getItemAt result", e))?;
+        let item = env
+            .call_method(
+                clip,
+                jni_str!("getItemAt"),
+                jni_sig!("(I)Landroid/content/ClipData$Item;"),
+                &[JValue::Int(0)],
+            )
+            .map_err(|e| Error::platform("android: getItemAt(0)", e))?
+            .l()
+            .map_err(|e| Error::platform("android: getItemAt result", e))?;
 
-    // coerceToText(Context)
-    let char_seq = env
-        .call_method(
-            item,
-            "coerceToText",
-            "(Landroid/content/Context;)Ljava/lang/CharSequence;",
-            &[JValue::Object(context)],
-        )
-        .map_err(|e| Error::platform("android: coerceToText", e))?
-        .l()
-        .map_err(|e| Error::platform("android: coerceToText result", e))?;
+        let char_seq = env
+            .call_method(
+                item,
+                jni_str!("coerceToText"),
+                jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
+                &[JValue::Object(context)],
+            )
+            .map_err(|e| Error::platform("android: coerceToText", e))?
+            .l()
+            .map_err(|e| Error::platform("android: coerceToText result", e))?;
 
-    if char_seq.is_null() {
-        return Err(Error::Unavailable("clipboard item has no text"));
-    }
+        if char_seq.is_null() {
+            return Err(Error::Unavailable("clipboard item has no text"));
+        }
 
-    // CharSequence.toString()
-    let jstring_obj = env
-        .call_method(char_seq, "toString", "()Ljava/lang/String;", &[])
-        .map_err(|e| Error::platform("android: toString", e))?
-        .l()
-        .map_err(|e| Error::platform("android: toString result", e))?;
+        let jstring_obj = env
+            .call_method(
+                char_seq,
+                jni_str!("toString"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )
+            .map_err(|e| Error::platform("android: toString", e))?
+            .l()
+            .map_err(|e| Error::platform("android: toString result", e))?;
 
-    let jstring = JString::from(jstring_obj);
-    let rust_string = env
-        .get_string(&jstring)
-        .map_err(|e| Error::platform("android: get_string", e))?
-        .to_string_lossy()
-        .into_owned();
+        let jstring = JString::cast_local(env, jstring_obj)
+            .map_err(|e| Error::platform("android: cast to JString", e))?;
+        let rust_string = jstring
+            .try_to_string(env)
+            .map_err(|e| Error::platform("android: get_string", e))?;
 
-    Ok(rust_string)
+        Ok(rust_string)
+    })
 }
 
-fn set_text_jni<'local, 'ctx>(
-    env: &mut JNIEnv<'local>,
-    context: &JObject<'ctx>,
-    text: &str,
-) -> Result<(), Error> {
-    let manager = get_clipboard_manager(env, context)?;
+fn set_text_jni(env: &mut Env<'_>, text: &str) -> Result<(), Error> {
+    with_context(env, |env, context| {
+        let manager = get_clipboard_manager(env, context)?;
 
-    let clipdata_class = env
-        .find_class("android/content/ClipData")
-        .map_err(|e| Error::platform("android: find_class(ClipData)", e))?;
+        let clipdata_class = env
+            .find_class(jni_str!("android/content/ClipData"))
+            .map_err(|e| Error::platform("android: find_class(ClipData)", e))?;
 
-    let label = env
-        .new_string("clipawl")
-        .map_err(|e| Error::platform("android: new_string(label)", e))?;
+        let label = JString::from_str(env, "clipawl")
+            .map_err(|e| Error::platform("android: new_string(label)", e))?;
 
-    let value = env
-        .new_string(text)
-        .map_err(|e| Error::platform("android: new_string(text)", e))?;
+        let value = JString::from_str(env, text)
+            .map_err(|e| Error::platform("android: new_string(text)", e))?;
 
-    let label_obj = JObject::from(label);
-    let value_obj = JObject::from(value);
+        let clipdata = env
+            .call_static_method(
+                clipdata_class,
+                jni_str!("newPlainText"),
+                jni_sig!(
+                    "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"
+                ),
+                &[JValue::Object(&*label), JValue::Object(&*value)],
+            )
+            .map_err(|e| Error::platform("android: newPlainText", e))?
+            .l()
+            .map_err(|e| Error::platform("android: newPlainText result", e))?;
 
-    // ClipData.newPlainText(label, text)
-    let clipdata = env
-        .call_static_method(
-            clipdata_class,
-            "newPlainText",
-            "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;",
-            &[JValue::Object(&label_obj), JValue::Object(&value_obj)],
+        env.call_method(
+            manager,
+            jni_str!("setPrimaryClip"),
+            jni_sig!("(Landroid/content/ClipData;)V"),
+            &[JValue::Object(&clipdata)],
         )
-        .map_err(|e| Error::platform("android: newPlainText", e))?
-        .l()
-        .map_err(|e| Error::platform("android: newPlainText result", e))?;
+        .map_err(|e| Error::platform("android: setPrimaryClip", e))?;
 
-    // setPrimaryClip
-    env.call_method(
-        manager,
-        "setPrimaryClip",
-        "(Landroid/content/ClipData;)V",
-        &[JValue::Object(&clipdata)],
-    )
-    .map_err(|e| Error::platform("android: setPrimaryClip", e))?;
-
-    Ok(())
+        Ok(())
+    })
 }
