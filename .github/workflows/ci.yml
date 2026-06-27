@@ -23,32 +23,35 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Check no-default-features
+        run: cargo check --no-default-features --locked
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --locked
 
       - name: Test
-        run: cargo test --verbose
+        run: cargo test --verbose --locked
 
   check-wasm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        run: rustup update stable && rustup default stable && rustup target install wasm32-unknown-unknown
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Check wasm32
-        run: cargo check --target wasm32-unknown-unknown
+        run: cargo check --target wasm32-unknown-unknown --locked
 
   check-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        run: rustup update stable && rustup default stable && rustup target install aarch64-linux-android
+      - name: Add Android target
+        run: rustup target add aarch64-linux-android
 
       - name: Install Android NDK
         uses: nttld/setup-ndk@v1
@@ -56,10 +59,10 @@ jobs:
           ndk-version: r26d
 
       - name: Check Android
-        run: cargo check --target aarch64-linux-android
+        run: cargo check --target aarch64-linux-android --locked
 
       - name: Build Android
-        run: cargo build --target aarch64-linux-android
+        run: cargo build --target aarch64-linux-android --locked
 
   docs:
     runs-on: ubuntu-latest
@@ -72,6 +75,6 @@ jobs:
           sudo apt-get install -y libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Build docs
-        run: cargo doc --no-deps
+        run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
