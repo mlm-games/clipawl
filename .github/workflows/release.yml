@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write 
+  contents: write
 
 concurrency:
   group: release-crate-${{ github.ref }}
@@ -17,29 +17,76 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  publish:
-    name: Publish to crates.io
+  prepare-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      name: ${{ steps.meta.outputs.name }}
-      version: ${{ steps.meta.outputs.version }}
-      crate_filename: ${{ steps.pkg.outputs.crate_filename }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version/tag metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            COMMIT_SHA="$(git rev-parse HEAD)"
+          else
+            OLD_VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+            IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
+            VERSION="$MAJ.$MIN.$((PAT+1))"
+            sed -i -E "0,/^version\s*=.*/s//version = \"$VERSION\"/" Cargo.toml
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            cargo update -w
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump to v$VERSION [skip ci]" || true
+            git push
+            TAG="v$VERSION"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            COMMIT_SHA="$(git rev-parse HEAD)"
+          fi
+
+          echo "version_name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag matches Cargo.toml version
+        run: |
+          VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
+            echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
+            exit 1
+          fi
+
+  publish:
+    name: Publish to crates.io
+    needs: prepare-version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.commit_sha }}
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Read package metadata and validate tag
+      - name: Read package metadata
         id: meta
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
           NAME=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].name')
           VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
-          echo "Tag: $TAG  Cargo: $VERSION ($NAME)"
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "Version mismatch: tag v$TAG != Cargo.toml $VERSION"
-            exit 1
-          fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -74,7 +121,9 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: publish
+    needs:
+      - prepare-version
+      - publish
     runs-on: ubuntu-latest
     steps:
       - name: Download crate artifact
@@ -92,8 +141,8 @@ jobs:
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.publish.outputs.version }}
-          name: v${{ needs.publish.outputs.version }}
+          tag_name: ${{ needs.prepare-version.outputs.tag }}
+          name: ${{ needs.prepare-version.outputs.tag }}
           generate_release_notes: true
           files: |
             dist/*.crate
