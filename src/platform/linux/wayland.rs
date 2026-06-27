@@ -89,7 +89,7 @@ impl WaylandClipboard {
     }
 
     pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
-        use wl_clipboard_rs::copy::{Options, Source};
+        use wl_clipboard_rs::copy::{ClipboardType, Options, Source};
 
         if let Some(e) = self.last_error.lock().unwrap().take() {
             log::warn!("clipawl wayland: previous write error: {}", e);
@@ -102,6 +102,10 @@ impl WaylandClipboard {
         };
 
         let bytes = data.to_vec();
+        let ct = match self.selection {
+            LinuxSelection::Clipboard => ClipboardType::Regular,
+            LinuxSelection::Primary => ClipboardType::Primary,
+        };
 
         let old = self.serving.lock().unwrap().take();
         if let Some(old) = old {
@@ -117,7 +121,8 @@ impl WaylandClipboard {
         }
 
         let handle = std::thread::spawn(move || {
-            let opts = Options::new();
+            let mut opts = Options::new();
+            opts.clipboard(ct);
             let result = opts
                 .copy(Source::Bytes(bytes.into()), mime)
                 .map_err(|e| Error::platform("linux/wayland: copy serve", e));
