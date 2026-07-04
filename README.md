@@ -68,7 +68,9 @@ let opts = ClipboardOptions {
     linux: LinuxOptions {
         selection: LinuxSelection::Primary,  // Use PRIMARY selection (middle-click paste)
         backend: LinuxBackend::X11,          // Force X11 backend
+        ..Default::default()
     },
+    ..Default::default()
 };
 
 let clipboard = Clipboard::new_with_options(opts)?;
@@ -96,7 +98,10 @@ async fn example(clipboard: &Clipboard) -> Result<(), Error> {
 | MIME type        | Wayland | Web | Android | X11 |
 |------------------|---------|-----|---------|-----|
 | `text/plain`     | ✅      | ✅  | ✅      | ✅  |
-| `*/*` (any)      | ✅      | ✅  | ❌       | ❌   |
+| `*/*` (any)      | ✅      | ✅¹ | ❌       | ❌   |
+
+¹ Web support is subject to browser support and permissions.
+   Use `ClipboardItem.supports()` (wasm-only) to check before writing.
 
 ## Cargo Features
 
@@ -105,7 +110,7 @@ async fn example(clipboard: &Clipboard) -> Result<(), Error> {
 
 Disable defaults to reduce dependencies:
 ```toml
-clipawl = { version = "0.3", default-features = false, features = ["linux-x11"] }
+clipawl = { version = "0.4", default-features = false, features = ["tokio", "linux-x11"] }
 ```
 
 ## License

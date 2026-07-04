@@ -45,8 +45,13 @@ fn with_context<'local, T>(
     f: impl FnOnce(&mut Env<'local>, &JObject<'local>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let android_ctx = ndk_context::android_context();
-    let context = unsafe { JObject::from_raw(env, android_ctx.context() as jobject) };
-    let context = std::mem::ManuallyDrop::new(context);
+    // Convert the raw global ref from ndk-context into a proper JNI local ref
+    // so JNI manages its lifetime (deleted when the local frame unwinds).
+    let raw: jobject = android_ctx.context();
+    let global = unsafe { JObject::from_raw(raw) };
+    let context = env
+        .new_local_ref(&global)
+        .map_err(|e| Error::platform("android: new_local_ref(context)", e))?;
     f(env, &context)
 }
 
@@ -69,31 +74,18 @@ fn get_mime_types_jni(env: &mut Env<'_>) -> Result<Vec<String>, Error> {
     with_context(env, |env, context| {
         let manager = get_clipboard_manager(env, context)?;
 
-        let clip = env
-            .call_method(
-                manager,
-                jni_str!("getPrimaryClip"),
-                jni_sig!("()Landroid/content/ClipData;"),
-                &[],
-            )
-            .map_err(|e| Error::platform("android: getPrimaryClip", e))?
-            .l()
-            .map_err(|e| Error::platform("android: getPrimaryClip result", e))?;
-
-        if clip.is_null() {
-            return Ok(Vec::new());
-        }
-
+        // Use getPrimaryClipDescription() — lighter than getPrimaryClip()
+        // because it doesn't materialize the clip data.
         let description = env
             .call_method(
-                &clip,
-                jni_str!("getDescription"),
+                manager,
+                jni_str!("getPrimaryClipDescription"),
                 jni_sig!("()Landroid/content/ClipDescription;"),
                 &[],
             )
-            .map_err(|e| Error::platform("android: getDescription", e))?
+            .map_err(|e| Error::platform("android: getPrimaryClipDescription", e))?
             .l()
-            .map_err(|e| Error::platform("android: getDescription result", e))?;
+            .map_err(|e| Error::platform("android: getPrimaryClipDescription result", e))?;
 
         if description.is_null() {
             return Ok(Vec::new());
@@ -112,28 +104,32 @@ fn get_mime_types_jni(env: &mut Env<'_>) -> Result<Vec<String>, Error> {
 
         let mut mimes = Vec::new();
         for i in 0..count {
-            let mime = env
-                .call_method(
-                    &description,
-                    jni_str!("getMimeType"),
-                    jni_sig!("(I)Ljava/lang/String;"),
-                    &[JValue::Int(i)],
-                )
-                .map_err(|e| Error::platform("android: getMimeType", e))?
-                .l()
-                .map_err(|e| Error::platform("android: getMimeType result", e))?;
+            // Wrap each iteration in a local frame to avoid accumulating
+            // JNI local references across iterations.
+            env.with_local_frame(16, |env| {
+                let mime = env
+                    .call_method(
+                        &description,
+                        jni_str!("getMimeType"),
+                        jni_sig!("(I)Ljava/lang/String;"),
+                        &[JValue::Int(i)],
+                    )
+                    .map_err(|e| Error::platform("android: getMimeType", e))?
+                    .l()
+                    .map_err(|e| Error::platform("android: getMimeType result", e))?;
 
-            if mime.is_null() {
-                continue;
-            }
-
-            if let Ok(jstr) = JString::cast_local(env, mime) {
-                if let Ok(s) = jstr.try_to_string(env) {
-                    if !mimes.contains(&s) {
-                        mimes.push(s);
+                if !mime.is_null() {
+                    if let Ok(jstr) = JString::cast_local(env, mime) {
+                        if let Ok(s) = jstr.try_to_string(env) {
+                            if !mimes.contains(&s) {
+                                mimes.push(s);
+                            }
+                        }
                     }
                 }
-            }
+                Ok::<_, Error>(())
+            })
+            .map_err(|e| Error::platform("android: local frame", e))?;
         }
 
         Ok(mimes)

@@ -2,37 +2,46 @@
 
 use crate::{ClipboardOptions, Error, LinuxSelection};
 use std::io::Read;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 use wl_clipboard_rs::paste::ClipboardType;
 
 pub(crate) struct WaylandClipboard {
     selection: LinuxSelection,
-    serving: std::sync::Mutex<Option<JoinHandle<Result<(), Error>>>>,
-    last_error: std::sync::Mutex<Option<Error>>,
+    serving: Mutex<Option<JoinHandle<Result<(), Error>>>>,
 }
 
 impl WaylandClipboard {
     pub(crate) fn new(opts: &ClipboardOptions) -> Result<Self, Error> {
-        // Probe Wayland availability by attempting a paste.
-        // Only ClipboardEmpty / NoMimeType are acceptable (protocol works).
-        // This is intentionally a side-effect-free check; it does not modify
-        // clipboard contents or trigger a permission dialog on most compositors.
+        // Probe Wayland availability by attempting a paste with the configured
+        // clipboard type (Regular or Primary).
         use wl_clipboard_rs::paste::{ClipboardType, MimeType, Seat, get_contents};
 
-        let result = get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text);
+        let ct = match opts.linux.selection {
+            LinuxSelection::Clipboard => ClipboardType::Regular,
+            LinuxSelection::Primary => ClipboardType::Primary,
+        };
+
+        let result = get_contents(ct, Seat::Unspecified, MimeType::Text);
         match result {
             Ok(_)
             | Err(wl_clipboard_rs::paste::Error::ClipboardEmpty)
             | Err(wl_clipboard_rs::paste::Error::NoMimeType) => {}
             Err(e) => {
+                // Map PrimarySelectionUnsupported to a clean error
+                if matches!(
+                    &e,
+                    wl_clipboard_rs::paste::Error::PrimarySelectionUnsupported
+                ) {
+                    return Err(Error::NotSupported);
+                }
                 return Err(Error::platform("linux/wayland: probe failed", e));
             }
         }
 
         Ok(Self {
             selection: opts.linux.selection,
-            serving: std::sync::Mutex::new(None),
-            last_error: std::sync::Mutex::new(None),
+            serving: Mutex::new(None),
         })
     }
 
@@ -57,10 +66,6 @@ impl WaylandClipboard {
 
     pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
         use wl_clipboard_rs::paste::{Seat, get_contents};
-
-        if let Some(e) = self.last_error.lock().unwrap().take() {
-            log::warn!("clipawl wayland: previous write error: {}", e);
-        }
 
         let ct = self.clipboard_type();
         let mime_type = mime_type.to_owned();
@@ -95,10 +100,6 @@ impl WaylandClipboard {
     pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
         use wl_clipboard_rs::copy::{ClipboardType, Options, Source};
 
-        if let Some(e) = self.last_error.lock().unwrap().take() {
-            log::warn!("clipawl wayland: previous write error: {}", e);
-        }
-
         let mime = if mime_type == "text/plain" {
             wl_clipboard_rs::copy::MimeType::Text
         } else {
@@ -111,7 +112,10 @@ impl WaylandClipboard {
             LinuxSelection::Primary => ClipboardType::Primary,
         };
 
-        let old = self.serving.lock().unwrap().take();
+        let old = {
+            let mut guard = self.serving.lock().unwrap_or_else(|e| e.into_inner());
+            guard.take()
+        };
         if let Some(old) = old {
             crate::exec::unblock(move || match old.join() {
                 Ok(Ok(())) => {}
@@ -137,7 +141,7 @@ impl WaylandClipboard {
             result
         });
 
-        *self.serving.lock().unwrap() = Some(handle);
+        *self.serving.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
         Ok(())
     }
 }

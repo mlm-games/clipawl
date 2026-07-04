@@ -21,7 +21,13 @@ where
 {
     match tokio::task::spawn_blocking(f).await {
         Ok(v) => v,
-        Err(e) => std::panic::resume_unwind(e.into_panic()),
+        Err(e) => {
+            if e.is_panic() {
+                std::panic::resume_unwind(e.into_panic());
+            } else {
+                panic!("clipawl internal error: spawn_blocking join failed: {e}");
+            }
+        }
     }
 }
 

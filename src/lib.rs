@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 //! # clipawl
 //!
 //! A minimal, effective clipboard crate for Rust with a portable async API.
@@ -68,6 +70,7 @@ pub use error::Error;
 
 /// Options for creating a clipboard handle.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ClipboardOptions {
     /// Linux-specific options.
     pub linux: LinuxOptions,
@@ -75,6 +78,7 @@ pub struct ClipboardOptions {
 
 /// Linux-specific clipboard options.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct LinuxOptions {
     /// Which X11 selection to use.
     pub selection: LinuxSelection,
@@ -93,6 +97,7 @@ impl Default for LinuxOptions {
 
 /// X11 selection type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum LinuxSelection {
     /// CLIPBOARD selection (Ctrl+C/Ctrl+V).
     #[default]
@@ -103,6 +108,7 @@ pub enum LinuxSelection {
 
 /// Linux backend preference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum LinuxBackend {
     /// Try Wayland first, fall back to X11.
     #[default]
@@ -126,6 +132,12 @@ pub struct Clipboard {
     inner: platform::ClipboardImpl,
 }
 
+impl std::fmt::Debug for Clipboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Clipboard").finish_non_exhaustive()
+    }
+}
+
 impl Clipboard {
     /// Create a new clipboard handle with default options.
     pub fn new() -> Result<Self, Error> {
@@ -143,6 +155,9 @@ impl Clipboard {
     ///
     /// Shortcut for `read_as("text/plain")`. Returns an empty string if no
     /// text content is available.
+    ///
+    /// **Note:** Invalid UTF-8 bytes are replaced with U+FFFD (lossy).
+    /// Use `read_as("text/plain")` for byte-exact round-trip fidelity.
     pub async fn read(&self) -> Result<String, Error> {
         let buf = self.inner.read("text/plain").await?;
         Ok(String::from_utf8_lossy(&buf).into_owned())
@@ -158,11 +173,13 @@ impl Clipboard {
     /// Read clipboard content in the given MIME type.
     ///
     /// Returns an empty `Vec` if no content is available in that type.
+    /// Returns `Err(Error::NotSupported)` if the platform does not support
+    /// the requested MIME type at all.
     ///
     /// ## Supported MIME types per platform:
     /// - **Wayland**: any MIME type is accepted
     /// - **Web**: any MIME type the browser supports
-    /// - **Android**: `text/plain`
+    /// - **Android**: `text/plain` only
     /// - **X11**: `text/plain` only
     pub async fn read_as(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
         self.inner.read(mime_type).await
@@ -177,6 +194,10 @@ impl Clipboard {
     ///
     /// Returns an empty `Vec` if the clipboard is empty or if the platform
     /// does not support format enumeration.
+    ///
+    /// **Web caveat:** On web, this calls `navigator.clipboard.read()`,
+    /// which requires user activation and may trigger a permission prompt.
+    /// It is not a cheap or side-effect-free query.
     pub async fn mime_types(&self) -> Result<Vec<String>, Error> {
         self.inner.mime_types().await
     }
@@ -184,9 +205,23 @@ impl Clipboard {
 
 /// Blocking API for non-wasm targets.
 ///
-/// Works with either the `tokio` or `async-io` feature. Each call drives
-/// the operation to completion on a small, throwaway executor — see the
-/// crate docs for keeping a `Clipboard` alive across repeated calls.
+/// Works with either the `tokio` or `async-io` feature. Each call creates a
+/// fresh `Clipboard` handle and drives the operation to completion on a
+/// throwaway executor.
+///
+/// **Important (X11):** The handle is dropped at the end of each function,
+/// which on X11 closes the display connection and relinquishes selection
+/// ownership. After `write()` or `write_as()` returns, other apps may see
+/// an empty clipboard. Keep a long-lived `Clipboard` instance (async) if
+/// you need ownership to persist.
+///
+/// **Important (performance):** Each call creates a new clipboard handle.
+/// On Linux this re-probes Wayland / reconnects X11 every time. For repeated
+/// calls, prefer holding an async `Clipboard` across operations.
+///
+/// **Caveat (tokio):** Calling these functions from within a tokio async
+/// context will panic (tokio disallows nested `block_on`). Use the async
+/// `Clipboard` API directly inside async code.
 #[cfg(any(feature = "tokio", feature = "async-io"))]
 #[cfg(not(target_arch = "wasm32"))]
 pub mod blocking {
@@ -194,6 +229,12 @@ pub mod blocking {
 
     #[cfg(feature = "tokio")]
     fn block_on<F: std::future::Future>(fut: F) -> Result<F::Output, Error> {
+        // Panic early with a clear message if called from within tokio.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return Err(Error::Unavailable(
+                "blocking API called from tokio async context; use the async Clipboard API instead",
+            ));
+        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -210,12 +251,18 @@ pub mod blocking {
     }
 
     /// Read text from the clipboard (blocking).
+    ///
+    /// See [module docs](self) for caveats about X11 selection ownership
+    /// and repeated-call performance.
     pub fn read() -> Result<String, Error> {
         let clipboard = Clipboard::new()?;
         block_on(clipboard.read())?
     }
 
     /// Write text to the clipboard (blocking).
+    ///
+    /// See [module docs](self) for caveats about X11 selection ownership
+    /// and repeated-call performance.
     pub fn write(text: &str) -> Result<(), Error> {
         let clipboard = Clipboard::new()?;
         let text = text.to_owned();
@@ -223,6 +270,9 @@ pub mod blocking {
     }
 
     /// Read clipboard content in the given MIME type (blocking).
+    ///
+    /// See [module docs](self) for caveats about X11 selection ownership
+    /// and repeated-call performance.
     pub fn read_as(mime_type: &str) -> Result<Vec<u8>, Error> {
         let clipboard = Clipboard::new()?;
         let mime_type = mime_type.to_owned();
@@ -230,6 +280,9 @@ pub mod blocking {
     }
 
     /// Write clipboard content in the given MIME type (blocking).
+    ///
+    /// See [module docs](self) for caveats about X11 selection ownership
+    /// and repeated-call performance.
     pub fn write_as(mime_type: &str, data: &[u8]) -> Result<(), Error> {
         let clipboard = Clipboard::new()?;
         let mime_type = mime_type.to_owned();
@@ -238,6 +291,9 @@ pub mod blocking {
     }
 
     /// List available MIME types on the clipboard (blocking).
+    ///
+    /// See [module docs](self) for caveats about X11 selection ownership
+    /// and repeated-call performance.
     pub fn mime_types() -> Result<Vec<String>, Error> {
         let clipboard = Clipboard::new()?;
         block_on(clipboard.mime_types())?

@@ -7,6 +7,8 @@ pub(crate) struct ClipboardImpl;
 
 impl ClipboardImpl {
     pub(crate) fn new(_opts: &ClipboardOptions) -> Result<Self, Error> {
+        // Validate that we're in a browser-like environment early.
+        web_sys::window().ok_or(Error::NotSupported)?;
         Ok(Self)
     }
 
@@ -55,13 +57,35 @@ impl ClipboardImpl {
             .await
             .map_err(map_js_err)?;
         let items = Array::from(&items);
-        let item = items.get(0);
-        if item.is_undefined() {
-            return Ok(Vec::new());
+
+        // Find the first ClipboardItem that carries the requested MIME type.
+        let mut item_found = None;
+        for i in 0..items.length() {
+            let val = items.get(i);
+            if val.is_undefined() || val.is_null() {
+                continue;
+            }
+            if let Ok(item) = val.dyn_into::<web_sys::ClipboardItem>() {
+                let types = item.types();
+                for j in 0..types.length() {
+                    if let Some(t) = types.get(j).as_string() {
+                        if t == mime_type {
+                            item_found = Some(item);
+                            break;
+                        }
+                    }
+                }
+                if item_found.is_some() {
+                    break;
+                }
+            }
         }
-        let item = item
-            .dyn_into::<web_sys::ClipboardItem>()
-            .map_err(|_| Error::Unavailable("not a ClipboardItem"))?;
+
+        let item = match item_found {
+            Some(item) => item,
+            None => return Ok(Vec::new()),
+        };
+
         let blob_promise = item.get_type(mime_type);
         let blob = wasm_bindgen_futures::JsFuture::from(blob_promise)
             .await
@@ -96,26 +120,17 @@ impl ClipboardImpl {
         let bag = web_sys::BlobPropertyBag::new();
         bag.set_type(mime_type);
 
-        // Text-based MIME types go as strings; binary as Uint8Array blobs
-        if mime_type.starts_with("text/") || mime_type == "application/rtf" {
-            let text = std::str::from_utf8(data).map_err(|e| Error::platform("web: utf-8", e))?;
-            let blob = web_sys::Blob::new_with_str_sequence_and_options(
-                &Array::of1(&JsValue::from(text)),
-                &bag,
-            )
-            .map_err(|e| Error::platform("web: create blob", JsError(format!("{:?}", e))))?;
-            Reflect::set(&obj, &JsValue::from(mime_type), &blob)
-                .map_err(|e| Error::platform("web: set blob", JsError(format!("{:?}", e))))?;
-        } else {
-            let uint8 = Uint8Array::from(data);
-            let blob =
-                web_sys::Blob::new_with_u8_array_sequence_and_options(&Array::of1(&uint8), &bag)
-                    .map_err(|e| {
-                        Error::platform("web: create blob", JsError(format!("{:?}", e)))
-                    })?;
-            Reflect::set(&obj, &JsValue::from(mime_type), &blob)
-                .map_err(|e| Error::platform("web: set blob", JsError(format!("{:?}", e))))?;
-        }
+        // Always build a Blob from raw bytes for byte-exact fidelity.
+        // The plain-text fast path (write("text/plain", data)) goes through
+        // write_text() above and never reaches this branch.
+        let uint8 = Uint8Array::from(data);
+        let blob =
+            web_sys::Blob::new_with_u8_array_sequence_and_options(&Array::of1(&uint8), &bag)
+                .map_err(|e| {
+                    Error::platform("web: create blob", JsError(format!("{:?}", e)))
+                })?;
+        Reflect::set(&obj, &JsValue::from(mime_type), &blob)
+            .map_err(|e| Error::platform("web: set blob", JsError(format!("{:?}", e))))?;
 
         let item = web_sys::ClipboardItem::new_with_record_from_str_to_blob_promise(&obj).map_err(
             |e| Error::platform("web: create ClipboardItem", JsError(format!("{:?}", e))),

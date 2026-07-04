@@ -4,6 +4,7 @@ use std::error::Error as StdError;
 
 /// Clipboard operation error.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Clipboard is not supported on this platform or in this environment.
     #[error("clipboard not supported on this platform")]

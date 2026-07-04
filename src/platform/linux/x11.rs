@@ -4,13 +4,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::{ClipboardOptions, Error, LinuxSelection};
 
-// Static assertion: clipboard_x11::Clipboard must be Send to be wrapped in Mutex.
+// Static assertions for thread safety.(x11)
 #[allow(dead_code)]
-fn _assert_send()
-where
-    clipboard_x11::Clipboard: Send,
-{
-}
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    fn assert_sync<T: Sync>() {}
+    assert_send::<clipboard_x11::Clipboard>();
+    assert_sync::<clipboard_x11::Clipboard>();
+};
 
 pub(crate) struct X11Clipboard {
     selection: LinuxSelection,
@@ -29,7 +30,9 @@ impl X11Clipboard {
     }
 
     pub(crate) async fn mime_types(&self) -> Result<Vec<String>, Error> {
-        Ok(vec!["text/plain".to_string()])
+        // X11 clipboard_x11 crate does not expose MIME type enumeration.
+        // Returns empty to match the documented contract
+        Ok(Vec::new())
     }
 
     pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
@@ -39,7 +42,7 @@ impl X11Clipboard {
         let selection = self.selection;
         let inner = Arc::clone(&self.inner);
         crate::exec::unblock(move || {
-            let inner = inner.lock().unwrap();
+            let inner = inner.lock().unwrap_or_else(|e| e.into_inner());
             let result = match selection {
                 LinuxSelection::Clipboard => inner.read(),
                 LinuxSelection::Primary => inner.read_primary(),
@@ -55,13 +58,12 @@ impl X11Clipboard {
         if mime_type != "text/plain" {
             return Err(Error::NotSupported);
         }
-        let text =
-            std::str::from_utf8(data).map_err(|e| Error::platform("linux/x11: utf-8", e))?;
+        let text = std::str::from_utf8(data).map_err(|e| Error::platform("linux/x11: utf-8", e))?;
         let text = text.to_owned();
         let selection = self.selection;
         let inner = Arc::clone(&self.inner);
         crate::exec::unblock(move || {
-            let mut inner = inner.lock().unwrap();
+            let mut inner = inner.lock().unwrap_or_else(|e| e.into_inner());
             let result = match selection {
                 LinuxSelection::Clipboard => inner.write(text),
                 LinuxSelection::Primary => inner.write_primary(text),
