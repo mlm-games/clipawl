@@ -14,13 +14,13 @@ impl ClipboardImpl {
     }
 
     pub(crate) async fn mime_types(&self) -> Result<Vec<String>, Error> {
-        tokio::task::block_in_place(|| with_jni_env(get_mime_types_jni))
+        crate::exec::unblock(|| with_jni_env(get_mime_types_jni)).await
     }
 
     pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
         match mime_type {
             "text/plain" => {
-                let s = tokio::task::block_in_place(|| with_jni_env(get_text_jni))?;
+                let s = crate::exec::unblock(|| with_jni_env(get_text_jni)).await?;
                 Ok(s.into_bytes())
             }
             _ => Err(Error::NotSupported),
@@ -33,7 +33,7 @@ impl ClipboardImpl {
                 let s =
                     std::str::from_utf8(data).map_err(|e| Error::platform("android: utf-8", e))?;
                 let s = s.to_owned();
-                tokio::task::block_in_place(move || with_jni_env(|env| set_text_jni(env, &s)))
+                crate::exec::unblock(move || with_jni_env(|env| set_text_jni(env, &s))).await
             }
             _ => Err(Error::NotSupported),
         }

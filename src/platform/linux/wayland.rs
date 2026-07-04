@@ -47,11 +47,12 @@ impl WaylandClipboard {
         use wl_clipboard_rs::paste::{Seat, get_mime_types};
 
         let ct = self.clipboard_type();
-        tokio::task::block_in_place(|| {
+        crate::exec::unblock(move || {
             get_mime_types(ct, Seat::Unspecified)
                 .map(|set| set.into_iter().collect())
                 .map_err(|e| Error::platform("linux/wayland: get_mime_types", e))
         })
+        .await
     }
 
     pub(crate) async fn read(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
@@ -61,16 +62,18 @@ impl WaylandClipboard {
             log::warn!("clipawl wayland: previous write error: {}", e);
         }
 
-        let mime = if mime_type == "text/plain" {
-            wl_clipboard_rs::paste::MimeType::Text
-        } else if mime_type.starts_with("text/") {
-            wl_clipboard_rs::paste::MimeType::TextWithPriority(mime_type)
-        } else {
-            wl_clipboard_rs::paste::MimeType::Specific(mime_type)
-        };
-
         let ct = self.clipboard_type();
-        tokio::task::block_in_place(|| {
+        let mime_type = mime_type.to_owned();
+
+        crate::exec::unblock(move || {
+            let mime = if mime_type == "text/plain" {
+                wl_clipboard_rs::paste::MimeType::Text
+            } else if mime_type.starts_with("text/") {
+                wl_clipboard_rs::paste::MimeType::TextWithPriority(&mime_type)
+            } else {
+                wl_clipboard_rs::paste::MimeType::Specific(&mime_type)
+            };
+
             let result = get_contents(ct, Seat::Unspecified, mime);
 
             match result {
@@ -86,6 +89,7 @@ impl WaylandClipboard {
                 Err(e) => Err(Error::platform("linux/wayland: get_contents", e)),
             }
         })
+        .await
     }
 
     pub(crate) async fn write(&self, mime_type: &str, data: &[u8]) -> Result<(), Error> {
@@ -109,7 +113,7 @@ impl WaylandClipboard {
 
         let old = self.serving.lock().unwrap().take();
         if let Some(old) = old {
-            tokio::task::block_in_place(|| match old.join() {
+            crate::exec::unblock(move || match old.join() {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
                     log::warn!("clipawl wayland: previous write error: {}", e);
@@ -117,7 +121,8 @@ impl WaylandClipboard {
                 Err(_) => {
                     log::warn!("clipawl wayland: previous write thread panicked");
                 }
-            });
+            })
+            .await;
         }
 
         let handle = std::thread::spawn(move || {

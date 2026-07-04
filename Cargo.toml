@@ -1,6 +1,6 @@
 [package]
 name = "clipawl"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.85"
@@ -11,7 +11,15 @@ keywords = ["clipboard", "wasm", "android", "linux", "cross-platform"]
 categories = ["api-bindings", "wasm", "os"]
 
 [features]
-default = ["linux-wayland", "linux-x11"]
+default = ["tokio", "linux-wayland", "linux-x11"]
+
+## Pick exactly one runtime for blocking platform calls (JNI, X11 protocol,
+## Wayland pipe I/O):
+##
+## If both are enabled, `tokio` takes priority.
+tokio = ["dep:tokio"]
+async-io = ["dep:async-io", "dep:blocking"]
+
 linux-wayland = ["wl-clipboard-rs"]
 linux-x11 = ["clipboard_x11"]
 
@@ -19,8 +27,11 @@ linux-x11 = ["clipboard_x11"]
 cfg-if = "1"
 thiserror = "2"
 log = "0.4"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
+tokio = { version = "1", optional = true, features = ["rt", "macros", "rt-multi-thread"] }
+async-io = { version = "2", optional = true }
+blocking = { version = "1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
@@ -59,3 +70,8 @@ path = "examples/linux.rs"
 [[example]]
 name = "blocking"
 path = "examples/blocking.rs"
+
+[[example]]
+name = "async_io"
+path = "examples/async_io.rs"
+required-features = ["async-io"]

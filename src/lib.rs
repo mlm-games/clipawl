@@ -29,6 +29,22 @@
 //! - **Wayland**: requires compositor support for data-control protocols.
 //!   Falls back to X11 (XWayland) if unavailable.
 //!
+//! ## Feature Flags
+//!
+//! - `tokio` (default) — run blocking platform calls via
+//!   `tokio::task::spawn_blocking`. Use this if your app already runs a
+//!   tokio runtime.
+//! - `async-io` — run blocking platform calls via the `blocking` crate's
+//!   thread pool (the same one backing `async-io`/`smol`). Use this if
+//!   you're on `async-io`/`smol` instead of tokio — e.g. winit apps using
+//!   `accesskit_winit`'s default `async-io` backend — and want a smaller
+//!   dependency footprint than pulling in tokio.
+//! - `linux-wayland` / `linux-x11` (both default) — enable the respective
+//!   Linux backends.
+//!
+//! Exactly one of `tokio` / `async-io` must be enabled for non-wasm targets
+//! (if both are enabled, `tokio` is used).
+//!
 //! ## Example
 //!
 //! ```rust,no_run
@@ -45,6 +61,8 @@
 
 mod error;
 mod platform;
+#[cfg(not(target_arch = "wasm32"))]
+mod exec;
 
 pub use error::Error;
 
@@ -166,61 +184,63 @@ impl Clipboard {
 
 /// Blocking API for non-wasm targets.
 ///
-/// **Note:** Each call creates a new tokio runtime and clipboard handle,
-/// which is wasteful (especially on Linux where connecting to Wayland/X11
-/// has overhead). Consider keeping a `Clipboard` instance alive with your
-/// own runtime if you make repeated calls.
+/// Works with either the `tokio` or `async-io` feature. Each call drives
+/// the operation to completion on a small, throwaway executor — see the
+/// crate docs for keeping a `Clipboard` alive across repeated calls.
+#[cfg(any(feature = "tokio", feature = "async-io"))]
 #[cfg(not(target_arch = "wasm32"))]
 pub mod blocking {
     use super::*;
 
-    fn new_runtime() -> Result<tokio::runtime::Runtime, Error> {
-        tokio::runtime::Builder::new_multi_thread()
+    #[cfg(feature = "tokio")]
+    fn block_on<F: std::future::Future>(fut: F) -> Result<F::Output, Error> {
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| Error::Platform {
-                context: "blocking: failed to create runtime",
+                context: "blocking: failed to create tokio runtime",
                 source: Box::new(e),
-            })
+            })?;
+        Ok(rt.block_on(fut))
+    }
+
+    #[cfg(all(feature = "async-io", not(feature = "tokio")))]
+    fn block_on<F: std::future::Future>(fut: F) -> Result<F::Output, Error> {
+        Ok(async_io::block_on(fut))
     }
 
     /// Read text from the clipboard (blocking).
     pub fn read() -> Result<String, Error> {
-        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
-        rt.block_on(clipboard.read())
+        block_on(clipboard.read())?
     }
 
     /// Write text to the clipboard (blocking).
     pub fn write(text: &str) -> Result<(), Error> {
-        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
         let text = text.to_owned();
-        rt.block_on(clipboard.write(&text))
+        block_on(async move { clipboard.write(&text).await })?
     }
 
     /// Read clipboard content in the given MIME type (blocking).
     pub fn read_as(mime_type: &str) -> Result<Vec<u8>, Error> {
-        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
         let mime_type = mime_type.to_owned();
-        rt.block_on(clipboard.read_as(&mime_type))
+        block_on(async move { clipboard.read_as(&mime_type).await })?
     }
 
     /// Write clipboard content in the given MIME type (blocking).
     pub fn write_as(mime_type: &str, data: &[u8]) -> Result<(), Error> {
-        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
         let mime_type = mime_type.to_owned();
         let data = data.to_vec();
-        rt.block_on(clipboard.write_as(&mime_type, &data))
+        block_on(async move { clipboard.write_as(&mime_type, &data).await })?
     }
 
     /// List available MIME types on the clipboard (blocking).
     pub fn mime_types() -> Result<Vec<String>, Error> {
-        let rt = new_runtime()?;
         let clipboard = Clipboard::new()?;
-        rt.block_on(clipboard.mime_types())
+        block_on(clipboard.mime_types())?
     }
 }
 
