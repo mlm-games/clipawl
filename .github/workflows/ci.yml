@@ -51,9 +51,6 @@ jobs:
       - name: Clippy (async-io only)
         run: cargo clippy --all-targets --no-default-features --features async-io,linux-wayland,linux-x11 --locked -- -D warnings
 
-      - name: Check no-default-features (wasm only — native requires a runtime feature)
-        run: cargo check --no-default-features --target wasm32-unknown-unknown --locked
-
       - name: Build
         run: cargo build --verbose --locked
 
@@ -70,6 +67,9 @@ jobs:
 
       - name: Check wasm32
         run: cargo check --target wasm32-unknown-unknown --locked
+
+      - name: Check no-default-features (wasm only -> native requires a runtime feature)
+        run: cargo check --no-default-features --target wasm32-unknown-unknown --locked
 
   check-android:
     runs-on: ubuntu-latest

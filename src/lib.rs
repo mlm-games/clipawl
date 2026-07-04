@@ -6,9 +6,9 @@
 //!
 //! ## Supported Platforms
 //!
-//! - **Web (wasm32)** — via `navigator.clipboard.readText/writeText`
-//! - **Android** — via JNI + ClipboardManager
-//! - **Linux** — via Wayland (wl-clipboard-rs) + X11 (clipboard_x11)
+//! - **Web (wasm32)** -> via `navigator.clipboard.readText/writeText`
+//! - **Android** -> via JNI + ClipboardManager
+//! - **Linux** -> via Wayland (wl-clipboard-rs) + X11 (clipboard_x11)
 //!
 //! ## Unsupported Platforms
 //!
@@ -33,15 +33,15 @@
 //!
 //! ## Feature Flags
 //!
-//! - `tokio` (default) — run blocking platform calls via
+//! - `tokio` (default) -> run blocking platform calls via
 //!   `tokio::task::spawn_blocking`. Use this if your app already runs a
 //!   tokio runtime.
-//! - `async-io` — run blocking platform calls via the `blocking` crate's
+//! - `async-io` -> run blocking platform calls via the `blocking` crate's
 //!   thread pool (the same one backing `async-io`/`smol`). Use this if
-//!   you're on `async-io`/`smol` instead of tokio — e.g. winit apps using
-//!   `accesskit_winit`'s default `async-io` backend — and want a smaller
+//!   you're on `async-io`/`smol` instead of tokio -> e.g. winit apps using
+//!   `accesskit_winit`'s default `async-io` backend -> and want a smaller
 //!   dependency footprint than pulling in tokio.
-//! - `linux-wayland` / `linux-x11` (both default) — enable the respective
+//! - `linux-wayland` / `linux-x11` (both default) -> enable the respective
 //!   Linux backends.
 //!
 //! Exactly one of `tokio` / `async-io` must be enabled for non-wasm targets

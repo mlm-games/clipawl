@@ -9,11 +9,11 @@ A clipboard crate for Rust with a portable async API.
 
 ## Features
 
-- **Async-first API** — works naturally with web's Promise-based clipboard
-- **Platform detection** — automatically picks Wayland or X11 on Linux
-- **Arbitrary MIME types** — read/write any format via `read_as("image/png")` etc.
-- **Bare `read()`/`write()` defaults to text** — no MIME type needed for plain text
-- **Documented pitfalls** — explicit about Linux selection ownership, web permissions, etc.
+- **Async-first API** -> works naturally with web's Promise-based clipboard
+- **Platform detection** -> automatically picks Wayland or X11 on Linux
+- **Arbitrary MIME types** -> read/write any format via `read_as("image/png")` etc.
+- **Bare `read()`/`write()` defaults to text** -> no MIME type needed for plain text
+- **Documented pitfalls** -> explicit about Linux selection ownership, web permissions, etc.
 
 ## Quick Start
 
@@ -105,8 +105,8 @@ async fn example(clipboard: &Clipboard) -> Result<(), Error> {
 
 ## Cargo Features
 
-- `linux-wayland` (default) — Enable Wayland backend
-- `linux-x11` (default) — Enable X11 backend
+- `linux-wayland` (default) -> Enable Wayland backend
+- `linux-x11` (default) -> Enable X11 backend
 
 Disable defaults to reduce dependencies:
 ```toml

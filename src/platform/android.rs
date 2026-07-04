@@ -80,7 +80,7 @@ fn get_mime_types_jni(env: &mut Env<'_>) -> Result<Vec<String>, Error> {
     with_context(env, |env, context| {
         let manager = get_clipboard_manager(env, context)?;
 
-        // Use getPrimaryClipDescription() — lighter than getPrimaryClip()
+        // Use getPrimaryClipDescription() -> lighter than getPrimaryClip()
         // because it doesn't materialize the clip data.
         let description = env
             .call_method(
