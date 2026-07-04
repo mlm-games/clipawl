@@ -124,11 +124,8 @@ impl ClipboardImpl {
         // The plain-text fast path (write("text/plain", data)) goes through
         // write_text() above and never reaches this branch.
         let uint8 = Uint8Array::from(data);
-        let blob =
-            web_sys::Blob::new_with_u8_array_sequence_and_options(&Array::of1(&uint8), &bag)
-                .map_err(|e| {
-                    Error::platform("web: create blob", JsError(format!("{:?}", e)))
-                })?;
+        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&Array::of1(&uint8), &bag)
+            .map_err(|e| Error::platform("web: create blob", JsError(format!("{:?}", e))))?;
         Reflect::set(&obj, &JsValue::from(mime_type), &blob)
             .map_err(|e| Error::platform("web: set blob", JsError(format!("{:?}", e))))?;
 

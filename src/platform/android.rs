@@ -6,6 +6,12 @@ use jni::objects::{JObject, JString, JValue};
 use jni::sys::{jint, jobject};
 use jni::{Env, jni_sig, jni_str};
 
+impl From<jni::errors::Error> for Error {
+    fn from(e: jni::errors::Error) -> Self {
+        Error::platform("jni", e)
+    }
+}
+
 pub(crate) struct ClipboardImpl;
 
 impl ClipboardImpl {
@@ -47,8 +53,8 @@ fn with_context<'local, T>(
     let android_ctx = ndk_context::android_context();
     // Convert the raw global ref from ndk-context into a proper JNI local ref
     // so JNI manages its lifetime (deleted when the local frame unwinds).
-    let raw: jobject = android_ctx.context();
-    let global = unsafe { JObject::from_raw(raw) };
+    let raw: jobject = android_ctx.context() as *mut _;
+    let global = unsafe { JObject::from_raw(env, raw) };
     let context = env
         .new_local_ref(&global)
         .map_err(|e| Error::platform("android: new_local_ref(context)", e))?;

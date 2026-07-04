@@ -62,9 +62,9 @@
 //! ```
 
 mod error;
-mod platform;
 #[cfg(not(target_arch = "wasm32"))]
 mod exec;
+mod platform;
 
 pub use error::Error;
 
