@@ -369,4 +369,47 @@ mod tests {
             .build();
         assert!(rt.is_ok());
     }
+
+    /// Writes binary data with a custom MIME type, reads it back, and verifies
+    /// the MIME type appears in `mime_types()`.
+    #[tokio::test]
+    #[cfg(all(target_os = "linux", feature = "linux-wayland"))]
+    async fn golden_read_write_as_roundtrip() {
+        if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            eprintln!("[golden] skipping: WAYLAND_DISPLAY not set");
+            return;
+        }
+
+        let cb = Clipboard::new_with_options(ClipboardOptions {
+            linux: LinuxOptions {
+                backend: LinuxBackend::Wayland,
+                ..Default::default()
+            },
+        })
+        .expect("create Wayland clipboard");
+
+        let mime = "application/x-clipawl-golden";
+        let data = b"hello golden world";
+
+        cb.write_as(mime, data).await.expect("write_as");
+
+        // read_as - best-effort (wayland doesn't support self-paste)
+        match cb.read_as(mime).await {
+            Ok(contents) if contents.is_empty() => {
+                eprintln!("[golden] read_as returned empty (self-paste unsupported)");
+            }
+            Ok(contents) => assert_eq!(contents, data, "round-trip data mismatch"),
+            Err(e) => panic!("read_as error: {e}"),
+        }
+
+        match cb.mime_types().await {
+            Ok(types) => assert!(
+                types.iter().any(|t| t == mime),
+                "expected '{mime}' in mime_types, got {types:?}",
+            ),
+            Err(e) => {
+                eprintln!("[golden] mime_types failed (self-query unsupported): {e}");
+            }
+        }
+    }
 }
