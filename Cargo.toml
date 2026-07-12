@@ -21,7 +21,7 @@ tokio = ["dep:tokio"]
 async-io = ["dep:async-io", "dep:blocking"]
 
 linux-wayland = ["wl-clipboard-rs"]
-linux-x11 = ["clipboard_x11"]
+linux-x11 = ["x11-clipboard"]
 
 [dependencies]
 cfg-if = "1"
@@ -56,7 +56,7 @@ jni = "=0.22"
 ndk-context = "0.1.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-clipboard_x11 = { version = "0.4.3", optional = true }
+x11-clipboard = { version = "0.9", optional = true }
 wl-clipboard-rs = { version = "0.9", optional = true }
 
 [dev-dependencies]
@@ -66,6 +66,7 @@ tokio = { version = "1", features = [
   "macros",
   "time",
 ] }
+env_logger = "0.11"
 
 [[example]]
 name = "linux"

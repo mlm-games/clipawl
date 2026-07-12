@@ -5,7 +5,7 @@ A clipboard crate for Rust with a portable async API.
 **Supported platforms:**
 - **Web** (wasm32) via `navigator.clipboard`
 - **Android** via JNI + ClipboardManager
-- **Linux** via Wayland (wl-clipboard-rs) + X11 (clipboard_x11) with runtime detection
+- **Linux** via Wayland (wl-clipboard-rs) + X11 (x11-clipboard) with runtime detection
 
 ## Features
 
@@ -98,10 +98,12 @@ async fn example(clipboard: &Clipboard) -> Result<(), Error> {
 | MIME type        | Wayland | Web | Android | X11 |
 |------------------|---------|-----|---------|-----|
 | `text/plain`     | ✅      | ✅  | ✅      | ✅  |
-| `*/*` (any)      | ✅      | ✅¹ | ❌       | ❌   |
+| `*/*` (any)      | ✅      | ✅¹ | ❌       | ✅²  |
 
 ¹ Web support is subject to browser support and permissions.
    Use `ClipboardItem.supports()` (wasm-only) to check before writing.
+
+² X11 stores only one mime target per write. Multiple types currently cannot be read on the same selection.
 
 ## Cargo Features
 

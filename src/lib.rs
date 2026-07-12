@@ -180,7 +180,7 @@ impl Clipboard {
     /// - **Wayland**: any MIME type is accepted
     /// - **Web**: any MIME type the browser supports
     /// - **Android**: `text/plain` only
-    /// - **X11**: `text/plain` only
+    /// - **X11**: any MIME type (one target per write)
     pub async fn read_as(&self, mime_type: &str) -> Result<Vec<u8>, Error> {
         self.inner.read(mime_type).await
     }
